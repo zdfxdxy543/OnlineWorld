@@ -69,16 +69,16 @@ watch(() => route.params.slug, loadBoard)
         <tr v-for="thread in threads" :key="thread.id">
           <td>
             <span v-if="thread.pinned" class="tag">Pinned</span>
-            <RouterLink :to="`/thread/${thread.id}`">{{ thread.title }}</RouterLink>
+            <RouterLink :to="`/forum/thread/${thread.id}`">{{ thread.title }}</RouterLink>
             <p class="muted">Tags: {{ thread.tags.join(', ') }}</p>
           </td>
           <td>
-            <RouterLink :to="`/user/${thread.author_id}`">{{ userNameById(thread.author_id) }}</RouterLink>
+            <RouterLink :to="`/forum/user/${thread.author_id}`">{{ userNameById(thread.author_id) }}</RouterLink>
           </td>
           <td>{{ thread.replies }}</td>
           <td>{{ thread.views }}</td>
           <td>
-            <RouterLink :to="`/user/${thread.last_reply_by_id}`">
+            <RouterLink :to="`/forum/user/${thread.last_reply_by_id}`">
               {{ userNameById(thread.last_reply_by_id) }}
             </RouterLink>
             <p class="muted">{{ thread.last_reply_at }}</p>
@@ -91,6 +91,6 @@ watch(() => route.params.slug, loadBoard)
   <section v-else class="panel">
     <h2 class="panel-title">Board not found</h2>
     <p class="muted">{{ errorText || 'The board may have moved to a different server node.' }}</p>
-    <RouterLink to="/">Return to forum home</RouterLink>
+    <RouterLink to="/forum">Return to forum home</RouterLink>
   </section>
 </template>

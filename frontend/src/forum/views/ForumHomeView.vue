@@ -57,7 +57,7 @@ onMounted(async () => {
         <tbody>
           <tr v-for="board in forumBoards" :key="board.slug">
             <td>
-              <RouterLink :to="`/board/${board.slug}`" class="board-name">{{ board.name }}</RouterLink>
+              <RouterLink :to="`/forum/board/${board.slug}`" class="board-name">{{ board.name }}</RouterLink>
               <p class="muted">{{ board.description }}</p>
               <p class="muted">Moderator: {{ board.moderator }}</p>
             </td>
@@ -65,7 +65,7 @@ onMounted(async () => {
             <td>{{ board.posts }}</td>
             <td>
               <template v-if="board.latest_thread">
-                <RouterLink :to="`/thread/${board.latest_thread.id}`">
+                <RouterLink :to="`/forum/thread/${board.latest_thread.id}`">
                   {{ board.latest_thread.title }}
                 </RouterLink>
                 <p class="muted">
@@ -87,7 +87,7 @@ onMounted(async () => {
         <h2 class="panel-title">Hot Threads</h2>
         <ul class="compact-list">
           <li v-for="thread in hotThreads" :key="thread.id">
-            <RouterLink :to="`/thread/${thread.id}`">{{ thread.title }}</RouterLink>
+            <RouterLink :to="`/forum/thread/${thread.id}`">{{ thread.title }}</RouterLink>
             <p class="muted">{{ thread.views }} views / {{ thread.replies }} replies</p>
           </li>
         </ul>

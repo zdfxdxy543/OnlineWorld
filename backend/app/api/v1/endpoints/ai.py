@@ -40,6 +40,7 @@ def _map_action_result(item: ActionResult) -> ActionExecuteResponse:
         output=item.output,
         facts=item.facts,
         events=_map_events(item.events),
+        pipeline=item.pipeline,
         error_code=item.error_code,
         error_message=item.error_message,
     )
@@ -144,6 +145,10 @@ def run_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRu
         status=report.status,
         results=[_map_action_result(item) for item in report.results],
         pending_steps=report.pending_steps,
+        planner_name=report.planner_name,
+        planner_source=report.planner_source,
+        fallback_used=report.fallback_used,
+        planner_detail=report.planner_detail,
         spawned_actor_id=spawned_actor.agent_id if spawned_actor else None,
         spawn_triggered=spawned_actor is not None,
     )

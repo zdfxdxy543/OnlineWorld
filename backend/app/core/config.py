@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_ROOT / 'onlineworld.db').as_posix()}"
+DEFAULT_NETDISK_STORAGE_DIR = str((BACKEND_ROOT / "storage" / "netdisk").resolve())
 
 
 def _parse_origins(value: str | None) -> tuple[str, ...]:
@@ -30,12 +36,13 @@ class Settings:
     environment: str = os.getenv("ENVIRONMENT", "development")
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
     api_prefix: str = "/api/v1"
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./onlineworld.db")
+    database_url: str = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
     llm_provider: str = os.getenv("LLM_PROVIDER", "siliconflow")
-    llm_model: str = os.getenv("LLM_MODEL", "story-seed-v1")
+    llm_model: str = os.getenv("LLM_MODEL", os.getenv("SILICONFLOW_CONTENT_MODEL", "Pro/deepseek-ai/DeepSeek-V3.2"))
     siliconflow_api_key: str = os.getenv("SILICONFLOW_API_KEY", "sk-vxnqqulpbrduxkhpxmsfebvhyvwdxjebofqcjtdsjrggebvv")
     siliconflow_base_url: str = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
     siliconflow_planner_model: str = os.getenv("SILICONFLOW_PLANNER_MODEL", "Pro/deepseek-ai/DeepSeek-V3.2")
+    netdisk_storage_dir: str = os.getenv("NETDISK_STORAGE_DIR", DEFAULT_NETDISK_STORAGE_DIR)
     scheduler_new_actor_probability: float = _parse_probability(
         os.getenv("SCHEDULER_NEW_ACTOR_PROBABILITY"), default=0.30
     )

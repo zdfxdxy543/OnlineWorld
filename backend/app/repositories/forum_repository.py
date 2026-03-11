@@ -50,6 +50,31 @@ class ThreadDetail(ThreadSummary):
 
 
 @dataclass(slots=True)
+class ForumThreadDraft:
+    draft_id: str
+    thread_id: str
+    first_post_id: str
+    board_slug: str
+    board_name: str
+    author_id: str
+    requested_title: str
+    requested_content: str
+    tags: list[str]
+    created_at: str
+
+
+@dataclass(slots=True)
+class ForumReplyDraft:
+    draft_id: str
+    thread_id: str
+    post_id: str
+    author_id: str
+    requested_content: str
+    thread_title: str
+    created_at: str
+
+
+@dataclass(slots=True)
 class UserProfile:
     id: str
     name: str
@@ -117,4 +142,28 @@ class AbstractForumRepository(ABC):
 
     @abstractmethod
     def reply_thread(self, *, thread_id: str, author_id: str, content: str) -> ThreadPost | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_thread_draft(
+        self,
+        *,
+        board_slug: str,
+        author_id: str,
+        requested_title: str,
+        requested_content: str,
+        tags: list[str],
+    ) -> ForumThreadDraft:
+        raise NotImplementedError
+
+    @abstractmethod
+    def publish_thread_draft(self, *, draft_id: str, title: str, content: str) -> ThreadDetail:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_reply_draft(self, *, thread_id: str, author_id: str, requested_content: str) -> ForumReplyDraft | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def publish_reply_draft(self, *, draft_id: str, content: str) -> ThreadPost | None:
         raise NotImplementedError

@@ -11,6 +11,10 @@ from app.simulation.tool_registry import ToolRegistry
 
 
 class StoryScheduler:
+    _REFERENCE_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+        "file_id": ("resource_id",),
+    }
+
     def __init__(self, planner: AbstractStoryPlanner, tool_registry: ToolRegistry) -> None:
         self.planner = planner
         self.tool_registry = tool_registry
@@ -19,7 +23,34 @@ class StoryScheduler:
     def run(self, *, goal: str, actors: list[str]) -> SchedulerRunReport:
         allowed_actors = set(actors)
         capabilities = self.tool_registry.list_capabilities()
-        plan = self.planner.build_story_plan(goal=goal, actors=actors, capabilities=capabilities)
+        try:
+            plan = self.planner.build_story_plan(goal=goal, actors=actors, capabilities=capabilities)
+        except Exception as error:
+            failure = ActionResult(
+                action_id=f"action-{next(self._action_counter):05d}",
+                capability="planner.build_story_plan",
+                status="failed",
+                error_code="llm_planner_failed",
+                error_message=str(error),
+                events=[
+                    StoryEvent(
+                        name="PlannerFailed",
+                        detail="调度规划阶段失败，已取消本次请求。",
+                        metadata={"goal": goal},
+                    )
+                ],
+            )
+            return SchedulerRunReport(
+                story_id="planner-failed",
+                goal=goal,
+                status="failed",
+                results=[failure],
+                pending_steps=[],
+                planner_name="siliconflow",
+                planner_source="remote_llm",
+                fallback_used=False,
+                planner_detail="Planner failed after retry limit.",
+            )
         completed_steps: set[str] = set()
         remaining_steps = {step.step_id: step for step in plan.steps}
         results: list[ActionResult] = []
@@ -55,6 +86,10 @@ class StoryScheduler:
                         status="failed",
                         results=results,
                         pending_steps=list(remaining_steps.keys()),
+                        planner_name=plan.planner_name,
+                        planner_source=plan.planner_source,
+                        fallback_used=plan.fallback_used,
+                        planner_detail=plan.planner_detail,
                     )
 
                 try:
@@ -81,6 +116,10 @@ class StoryScheduler:
                         status="failed",
                         results=results,
                         pending_steps=list(remaining_steps.keys()),
+                        planner_name=plan.planner_name,
+                        planner_source=plan.planner_source,
+                        fallback_used=plan.fallback_used,
+                        planner_detail=plan.planner_detail,
                     )
 
                 action_id = f"action-{next(self._action_counter):05d}"
@@ -89,7 +128,7 @@ class StoryScheduler:
                     capability=step.capability,
                     actor_id=step.actor_id,
                     payload=resolved_payload,
-                    idempotency_key=f"{plan.story_id}:{step.step_id}",
+                    idempotency_key=f"{plan.story_id}:{step.step_id}:{action_id}",
                 )
                 result = self.tool_registry.execute(request)
                 result.events.insert(
@@ -114,6 +153,10 @@ class StoryScheduler:
                         status="failed",
                         results=results,
                         pending_steps=list(remaining_steps.keys()),
+                        planner_name=plan.planner_name,
+                        planner_source=plan.planner_source,
+                        fallback_used=plan.fallback_used,
+                        planner_detail=plan.planner_detail,
                     )
 
         status = "success" if not remaining_steps else "partial"
@@ -123,6 +166,10 @@ class StoryScheduler:
             status=status,
             results=results,
             pending_steps=list(remaining_steps.keys()),
+            planner_name=plan.planner_name,
+            planner_source=plan.planner_source,
+            fallback_used=plan.fallback_used,
+            planner_detail=plan.planner_detail,
         )
 
     def _resolve_payload(self, payload: dict[str, Any], step_results: dict[str, ActionResult]) -> dict[str, Any]:
@@ -177,13 +224,23 @@ class StoryScheduler:
         key = token_match.group(1)
         index = token_match.group(2)
 
-        if not isinstance(current, dict) or key not in current:
+        if not isinstance(current, dict):
             raise ValueError(f"Reference key '{key}' not found in ${reference}")
 
-        next_value = current[key]
+        resolved_key = key
+        if key not in current:
+            for alias in self._REFERENCE_KEY_ALIASES.get(key, ()):
+                if alias in current:
+                    resolved_key = alias
+                    break
+
+        if resolved_key not in current:
+            raise ValueError(f"Reference key '{key}' not found in ${reference}")
+
+        next_value = current[resolved_key]
         if index is not None:
             if not isinstance(next_value, list):
-                raise ValueError(f"Reference target '{key}' is not a list in ${reference}")
+                raise ValueError(f"Reference target '{resolved_key}' is not a list in ${reference}")
             item_index = int(index)
             if item_index >= len(next_value):
                 raise ValueError(f"Reference index out of range in ${reference}")

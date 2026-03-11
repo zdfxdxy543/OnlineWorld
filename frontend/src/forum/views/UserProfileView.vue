@@ -58,7 +58,7 @@ watch(() => route.params.userId, loadUser)
       <h2 class="panel-title">Recent Threads</h2>
       <ul class="compact-list">
         <li v-for="thread in recentThreads" :key="thread.id">
-          <RouterLink :to="`/thread/${thread.id}`">{{ thread.title }}</RouterLink>
+          <RouterLink :to="`/forum/thread/${thread.id}`">{{ thread.title }}</RouterLink>
           <p class="muted">{{ thread.replies }} replies / {{ thread.views }} views</p>
         </li>
       </ul>
@@ -68,6 +68,6 @@ watch(() => route.params.userId, loadUser)
   <section v-else class="panel">
     <h2 class="panel-title">User not found</h2>
     <p class="muted">{{ errorText || 'This account may have been retired from the simulation.' }}</p>
-    <RouterLink to="/">Return to forum home</RouterLink>
+    <RouterLink to="/forum">Return to forum home</RouterLink>
   </section>
 </template>

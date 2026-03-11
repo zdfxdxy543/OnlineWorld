@@ -8,7 +8,9 @@ from app.infrastructure.db.session import DatabaseSessionManager
 from app.repositories.forum_repository import (
     AbstractForumRepository,
     BoardSummary,
+    ForumReplyDraft,
     ForumStats,
+    ForumThreadDraft,
     ThreadDetail,
     ThreadPost,
     ThreadSummary,
@@ -21,6 +23,7 @@ class SQLiteForumRepository(AbstractForumRepository):
         self.session_manager = session_manager
         self._thread_counter = count(10000)
         self._post_counter = count(20000)
+        self._draft_counter = count(1)
 
     def initialize(self) -> None:
         self._create_tables()
@@ -323,6 +326,158 @@ class SQLiteForumRepository(AbstractForumRepository):
             raise RuntimeError("Failed to load newly created thread")
         return thread
 
+    def create_thread_draft(
+        self,
+        *,
+        board_slug: str,
+        author_id: str,
+        requested_title: str,
+        requested_content: str,
+        tags: list[str],
+    ) -> ForumThreadDraft:
+        now = datetime.now(timezone.utc).isoformat()
+        draft_id = f"fd{next(self._draft_counter):05d}"
+        thread_id = f"t{next(self._thread_counter)}"
+        post_id = f"p{next(self._post_counter)}"
+        tags_text = ",".join(tag.strip() for tag in tags if tag.strip())
+
+        with self.session_manager.connect() as conn:
+            board_row = conn.execute(
+                "SELECT slug, name FROM boards WHERE slug = ?",
+                (board_slug,),
+            ).fetchone()
+            if board_row is None:
+                raise ValueError(f"Board not found: {board_slug}")
+
+            conn.execute(
+                """
+                INSERT INTO thread_drafts (
+                    draft_id,
+                    thread_id,
+                    first_post_id,
+                    board_slug,
+                    board_name,
+                    author_id,
+                    requested_title,
+                    requested_content,
+                    tags,
+                    status,
+                    created_at,
+                    published_at,
+                    final_title,
+                    final_content
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    thread_id,
+                    post_id,
+                    board_slug,
+                    board_row["name"],
+                    author_id,
+                    requested_title,
+                    requested_content,
+                    tags_text,
+                    "pending",
+                    now,
+                    None,
+                    None,
+                    None,
+                ),
+            )
+            conn.commit()
+
+        return ForumThreadDraft(
+            draft_id=draft_id,
+            thread_id=thread_id,
+            first_post_id=post_id,
+            board_slug=board_slug,
+            board_name=board_row["name"],
+            author_id=author_id,
+            requested_title=requested_title,
+            requested_content=requested_content,
+            tags=[tag.strip() for tag in tags if tag.strip()],
+            created_at=now,
+        )
+
+    def publish_thread_draft(self, *, draft_id: str, title: str, content: str) -> ThreadDetail:
+        with self.session_manager.connect() as conn:
+            draft_row = conn.execute(
+                "SELECT * FROM thread_drafts WHERE draft_id = ?",
+                (draft_id,),
+            ).fetchone()
+            if draft_row is None:
+                raise KeyError(f"Thread draft not found: {draft_id}")
+
+            if draft_row["status"] == "published":
+                existing_thread = self.get_thread(draft_row["thread_id"])
+                if existing_thread is None:
+                    raise RuntimeError("Published draft is missing its thread record")
+                return existing_thread
+
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """
+                INSERT INTO threads (
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_row["thread_id"],
+                    draft_row["board_slug"],
+                    title,
+                    draft_row["author_id"],
+                    0,
+                    0,
+                    draft_row["author_id"],
+                    now,
+                    0,
+                    draft_row["tags"],
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO posts (id, thread_id, author_id, created_at, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_row["first_post_id"],
+                    draft_row["thread_id"],
+                    draft_row["author_id"],
+                    now,
+                    content,
+                ),
+            )
+            conn.execute("UPDATE users SET posts = posts + 1 WHERE id = ?", (draft_row["author_id"],))
+            conn.execute(
+                """
+                UPDATE thread_drafts
+                SET status = ?,
+                    published_at = ?,
+                    final_title = ?,
+                    final_content = ?
+                WHERE draft_id = ?
+                """,
+                ("published", now, title, content, draft_id),
+            )
+            conn.commit()
+
+        thread = self.get_thread(draft_row["thread_id"])
+        if thread is None:
+            raise RuntimeError("Failed to load published thread")
+        return thread
+
     def reply_thread(self, *, thread_id: str, author_id: str, content: str) -> ThreadPost | None:
         now = datetime.now(timezone.utc).isoformat()
         post_id = f"p{next(self._post_counter)}"
@@ -355,6 +510,125 @@ class SQLiteForumRepository(AbstractForumRepository):
         return ThreadPost(
             id=post_id,
             author_id=author_id,
+            created_at=now,
+            content=content,
+        )
+
+    def create_reply_draft(self, *, thread_id: str, author_id: str, requested_content: str) -> ForumReplyDraft | None:
+        now = datetime.now(timezone.utc).isoformat()
+        draft_id = f"fd{next(self._draft_counter):05d}"
+        post_id = f"p{next(self._post_counter)}"
+
+        with self.session_manager.connect() as conn:
+            thread_row = conn.execute(
+                "SELECT id, title FROM threads WHERE id = ?",
+                (thread_id,),
+            ).fetchone()
+            if thread_row is None:
+                return None
+
+            conn.execute(
+                """
+                INSERT INTO reply_drafts (
+                    draft_id,
+                    thread_id,
+                    post_id,
+                    author_id,
+                    requested_content,
+                    thread_title,
+                    status,
+                    created_at,
+                    published_at,
+                    final_content
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    thread_id,
+                    post_id,
+                    author_id,
+                    requested_content,
+                    thread_row["title"],
+                    "pending",
+                    now,
+                    None,
+                    None,
+                ),
+            )
+            conn.commit()
+
+        return ForumReplyDraft(
+            draft_id=draft_id,
+            thread_id=thread_id,
+            post_id=post_id,
+            author_id=author_id,
+            requested_content=requested_content,
+            thread_title=thread_row["title"],
+            created_at=now,
+        )
+
+    def publish_reply_draft(self, *, draft_id: str, content: str) -> ThreadPost | None:
+        with self.session_manager.connect() as conn:
+            draft_row = conn.execute(
+                "SELECT * FROM reply_drafts WHERE draft_id = ?",
+                (draft_id,),
+            ).fetchone()
+            if draft_row is None:
+                return None
+
+            if draft_row["status"] == "published":
+                return ThreadPost(
+                    id=draft_row["post_id"],
+                    author_id=draft_row["author_id"],
+                    created_at=draft_row["published_at"] or draft_row["created_at"],
+                    content=draft_row["final_content"] or content,
+                )
+
+            now = datetime.now(timezone.utc).isoformat()
+            existing = conn.execute("SELECT id FROM threads WHERE id = ?", (draft_row["thread_id"],)).fetchone()
+            if existing is None:
+                return None
+
+            conn.execute(
+                """
+                INSERT INTO posts (id, thread_id, author_id, created_at, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_row["post_id"],
+                    draft_row["thread_id"],
+                    draft_row["author_id"],
+                    now,
+                    content,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE threads
+                SET replies = replies + 1,
+                    last_reply_by_id = ?,
+                    last_reply_at = ?
+                WHERE id = ?
+                """,
+                (draft_row["author_id"], now, draft_row["thread_id"]),
+            )
+            conn.execute("UPDATE users SET posts = posts + 1 WHERE id = ?", (draft_row["author_id"],))
+            conn.execute(
+                """
+                UPDATE reply_drafts
+                SET status = ?,
+                    published_at = ?,
+                    final_content = ?
+                WHERE draft_id = ?
+                """,
+                ("published", now, content, draft_id),
+            )
+            conn.commit()
+
+        return ThreadPost(
+            id=draft_row["post_id"],
+            author_id=draft_row["author_id"],
             created_at=now,
             content=content,
         )
@@ -453,6 +727,36 @@ class SQLiteForumRepository(AbstractForumRepository):
                     content TEXT NOT NULL,
                     FOREIGN KEY(thread_id) REFERENCES threads(id),
                     FOREIGN KEY(author_id) REFERENCES users(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS thread_drafts (
+                    draft_id TEXT PRIMARY KEY,
+                    thread_id TEXT NOT NULL,
+                    first_post_id TEXT NOT NULL,
+                    board_slug TEXT NOT NULL,
+                    board_name TEXT NOT NULL,
+                    author_id TEXT NOT NULL,
+                    requested_title TEXT NOT NULL,
+                    requested_content TEXT NOT NULL,
+                    tags TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT,
+                    final_title TEXT,
+                    final_content TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS reply_drafts (
+                    draft_id TEXT PRIMARY KEY,
+                    thread_id TEXT NOT NULL,
+                    post_id TEXT NOT NULL,
+                    author_id TEXT NOT NULL,
+                    requested_content TEXT NOT NULL,
+                    thread_title TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT,
+                    final_content TEXT
                 );
                 """
             )
@@ -687,6 +991,20 @@ class SQLiteForumRepository(AbstractForumRepository):
             post_row = conn.execute(
                 "SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 19999) AS max_id FROM posts"
             ).fetchone()
+            draft_row = conn.execute(
+                """
+                SELECT COALESCE(
+                    MAX(CAST(SUBSTR(draft_id, 3) AS INTEGER)),
+                    0
+                ) AS max_id
+                FROM (
+                    SELECT draft_id FROM thread_drafts
+                    UNION ALL
+                    SELECT draft_id FROM reply_drafts
+                )
+                """
+            ).fetchone()
 
         self._thread_counter = count(int(thread_row["max_id"]) + 1)
         self._post_counter = count(int(post_row["max_id"]) + 1)
+        self._draft_counter = count(int(draft_row["max_id"]) + 1)

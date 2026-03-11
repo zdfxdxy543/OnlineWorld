@@ -31,11 +31,12 @@ onMounted(async () => {
         <span>Total posts: {{ forumStats.total_posts }}</span>
       </div>
       <nav class="top-nav">
-        <RouterLink to="/">Forum Home</RouterLink>
-        <RouterLink to="/board/town-square">Town Square</RouterLink>
-        <RouterLink to="/board/bazaar">Bazaar</RouterLink>
-        <RouterLink to="/board/whispers">Whispers</RouterLink>
-        <RouterLink to="/user/aria">My Profile</RouterLink>
+        <RouterLink to="/forum">Forum Home</RouterLink>
+        <RouterLink to="/forum/board/town-square">Town Square</RouterLink>
+        <RouterLink to="/forum/board/bazaar">Bazaar</RouterLink>
+        <RouterLink to="/forum/board/whispers">Whispers</RouterLink>
+        <RouterLink to="/forum/user/aria">My Profile</RouterLink>
+        <RouterLink to="/netdisk">Switch to BlueBox Netdisk</RouterLink>
       </nav>
       <div class="search-row">
         <label for="forum-search">Quick Search:</label>

@@ -46,6 +46,7 @@ class ActionExecuteResponse(BaseModel):
     output: dict
     facts: list[str]
     events: list[StoryEventResponse]
+    pipeline: dict = Field(default_factory=dict)
     error_code: str | None
     error_message: str | None
 
@@ -61,5 +62,9 @@ class SchedulerRunResponse(BaseModel):
     status: str
     results: list[ActionExecuteResponse]
     pending_steps: list[str]
+    planner_name: str
+    planner_source: str
+    fallback_used: bool = False
+    planner_detail: str = ""
     spawned_actor_id: str | None = None
     spawn_triggered: bool = False

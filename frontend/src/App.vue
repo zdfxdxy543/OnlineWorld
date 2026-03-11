@@ -1,7 +1,7 @@
 <script setup>
-import ForumApp from './forum/ForumApp.vue'
+import { RouterView } from 'vue-router'
 </script>
 
 <template>
-  <ForumApp />
+  <RouterView />
 </template>

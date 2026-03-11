@@ -48,15 +48,15 @@ watch(() => route.params.threadId, loadThread)
     <article class="panel thread-main">
       <header class="thread-header">
         <p class="muted">
-          <RouterLink to="/">Forum Home</RouterLink>
-          / <RouterLink :to="`/board/${thread.board_slug}`">{{ boardNameBySlug[thread.board_slug] || thread.board_slug }}</RouterLink>
+          <RouterLink to="/forum">Forum Home</RouterLink>
+          / <RouterLink :to="`/forum/board/${thread.board_slug}`">{{ boardNameBySlug[thread.board_slug] || thread.board_slug }}</RouterLink>
         </p>
         <h2 class="panel-title">{{ thread.title }}</h2>
       </header>
 
       <article v-for="post in thread.posts" :key="post.id" class="post-card">
         <aside class="post-author">
-          <RouterLink :to="`/user/${post.author_id}`" class="user-link">
+          <RouterLink :to="`/forum/user/${post.author_id}`" class="user-link">
             {{ userNameById[post.author_id] || post.author_id }}
           </RouterLink>
           <p class="muted">Forum Member</p>
@@ -90,6 +90,6 @@ watch(() => route.params.threadId, loadThread)
   <section v-else class="panel">
     <h2 class="panel-title">Thread not found</h2>
     <p class="muted">{{ errorText || 'The thread was archived or removed by moderators.' }}</p>
-    <RouterLink to="/">Return to forum home</RouterLink>
+    <RouterLink to="/forum">Return to forum home</RouterLink>
   </section>
 </template>

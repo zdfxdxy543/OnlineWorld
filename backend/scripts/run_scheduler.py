@@ -82,9 +82,7 @@ if __name__ == "__main__":
         sys.argv.extend(
             [
                 "--goal",
-                "生成一条可信的论坛线索帖",
-                "--actors",
-                "aria",
+                "Generate a story about something suspicious.",
                 "--spawn-probability",
                 "0.3",
             ]
