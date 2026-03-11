@@ -1,0 +1,214 @@
+{
+  "document_id": "onlineworld-ai-web-generation-playbook-v1",
+  "target_audience": "autonomous coding agents",
+  "project": "OnlineWorld",
+  "goals": [
+    "Generate a new web page feature end-to-end",
+    "Implement backend + frontend contracts",
+    "Integrate feature into scheduler capability system"
+  ],
+  "architecture_map": {
+    "backend": {
+      "container": "backend/app/container.py",
+      "api_endpoints": "backend/app/api/v1/endpoints/*.py",
+      "schemas": "backend/app/schemas/*.py",
+      "services": "backend/app/services/*.py",
+      "repositories": "backend/app/repositories/*.py",
+      "sqlite_impl": "backend/app/infrastructure/db/*.py"
+    },
+    "simulation": {
+      "protocol": "backend/app/simulation/protocol.py",
+      "workflow_base": "backend/app/simulation/tools/workflow.py",
+      "tool_registry": "backend/app/simulation/tool_registry.py",
+      "scheduler": "backend/app/simulation/scheduler.py",
+      "planner": "backend/app/simulation/planner.py",
+      "tool_pipelines": [
+        "backend/app/simulation/tools/netdisk_pipeline.py",
+        "backend/app/simulation/tools/forum_pipeline.py"
+      ]
+    },
+    "frontend": {
+      "router": "frontend/src/router/index.js",
+      "api_wrappers": "frontend/src/forum/api/*.js",
+      "views": "frontend/src/forum/views/*.vue",
+      "site_shell": "frontend/src/netdisk/NetdiskApp.vue"
+    }
+  },
+  "execution_algorithm": [
+    {
+      "phase": "P1_contract_design",
+      "steps": [
+        "Define user journey and permission model",
+        "Define request/response schema fields",
+        "Define identifier + credential strategy (e.g., resource_id + access_code)",
+        "Define error code matrix (404 invalid credential, 500 storage issue)"
+      ],
+      "outputs": [
+        "Schema classes under backend/app/schemas",
+        "Endpoint signatures under backend/app/api/v1/endpoints"
+      ]
+    },
+    {
+      "phase": "P2_backend_implementation",
+      "steps": [
+        "Add abstract repository methods in backend/app/repositories",
+        "Implement SQLite methods in backend/app/infrastructure/db",
+        "Add business orchestration in backend/app/services",
+        "Expose API routes in backend/app/api/v1/endpoints",
+        "Keep validation and expiration checks in Service layer"
+      ],
+      "invariants": [
+        "No business logic in endpoint beyond parameter parsing and HTTP mapping",
+        "Repository returns domain records, not HTTP objects",
+        "Service owns security checks"
+      ]
+    },
+    {
+      "phase": "P3_frontend_implementation",
+      "steps": [
+        "Add API wrappers in frontend/src/forum/api",
+        "Add or update page view in frontend/src/forum/views",
+        "Connect route in frontend/src/router/index.js",
+        "Ensure page state machine: form/loading/error/data",
+        "Use server-authorized download URL generation"
+      ],
+      "ui_contract": {
+        "required_states": [
+          "idle",
+          "loading",
+          "success",
+          "error"
+        ],
+        "required_controls": [
+          "credential input",
+          "fetch/open button",
+          "download button"
+        ]
+      }
+    },
+    {
+      "phase": "P4_scheduler_integration",
+      "steps": [
+        "Define capability in workflow.capability -> CapabilitySpec",
+        "Implement execute_facts() to persist immutable facts first",
+        "If generation needed: implement build_generation_request()",
+        "Implement validate_generated_content() with required-fields + alias mapping",
+        "Implement publish() to finalize state and return output keys",
+        "Register tool executor in container ToolRegistry",
+        "Ensure planner can emit step payload using $step-N.output.key references",
+        "Add key alias in StoryScheduler if historical names differ"
+      ],
+      "required_output_keys": [
+        "resource_id",
+        "share_id",
+        "access_code"
+      ]
+    },
+    {
+      "phase": "P5_verification",
+      "steps": [
+        "Run backend import smoke-check",
+        "Run frontend build",
+        "Run scheduler scenario end-to-end",
+        "Inspect scheduler report for consistency_check_failed/unresolved_reference",
+        "Confirm UI flow matches permission model"
+      ]
+    }
+  ],
+  "scheduler_adapter_template": {
+    "capability_spec": {
+      "name": "<site>.<action>",
+      "site": "<site>",
+      "description": "<what this action does>",
+      "input_schema": {
+        "<field>": "<type>"
+      },
+      "read_only": false
+    },
+    "workflow_methods": [
+      "execute_facts(request)",
+      "build_generation_request(request, fact_result)",
+      "validate_generated_content(request, fact_result, generated_content)",
+      "publish(request, fact_result, validation_result)"
+    ],
+    "result_requirements": {
+      "fact_output": [
+        "ids required by downstream steps"
+      ],
+      "generation_context": [
+        "fields needed by LLM prompt"
+      ],
+      "publication_output": [
+        "canonical ids for scheduler references"
+      ]
+    }
+  },
+  "common_failures_and_repairs": [
+    {
+      "failure": "unresolved_reference on file_id",
+      "cause": "downstream payload requests file_id but upstream emits resource_id",
+      "repair": "add alias map in StoryScheduler._REFERENCE_KEY_ALIASES"
+    },
+    {
+      "failure": "consistency_check_failed missing file_content",
+      "cause": "LLM returned alternative key (content/body/text)",
+      "repair": "add alias resolution in validate_generated_content()"
+    },
+    {
+      "failure": "LLM echoes request envelope",
+      "cause": "prompt not explicit about exact output keys",
+      "repair": "capability-specific prompt with strict field contract"
+    },
+    {
+      "failure": "Vue Invalid end tag",
+      "cause": "SFC file got duplicated template/style blocks",
+      "repair": "reset to single script+template+style block"
+    },
+    {
+      "failure": "security bypass on file read/download",
+      "cause": "endpoint does not require access_code",
+      "repair": "enforce resource_id + access_code in service validation path"
+    }
+  ],
+  "definition_of_done": {
+    "backend": [
+      "endpoint returns expected schema",
+      "credential checks enforced",
+      "storage read/write path stable"
+    ],
+    "frontend": [
+      "route reachable",
+      "all state transitions handled",
+      "download action works with credentials"
+    ],
+    "scheduler": [
+      "new capability registered in ToolRegistry",
+      "planner can use capability",
+      "run report status success or explainable failure"
+    ],
+    "ci_like_checks": [
+      "frontend npm run build passes",
+      "backend import smoke-check passes"
+    ]
+  },
+  "recommended_command_sequence": {
+    "backend_smoke": [
+      "Set-Location D:\\Else\\OnlineWorld\\backend",
+      "d:/Else/OnlineWorld/.venv-1/Scripts/python.exe -c \"from app.api.v1.endpoints.netdisk import router; print('ok')\""
+    ],
+    "frontend_build": [
+      "Set-Location D:\\Else\\OnlineWorld\\frontend",
+      "npm run build"
+    ],
+    "scheduler_run": [
+      "Set-Location D:\\Else\\OnlineWorld\\backend",
+      "d:/Else/OnlineWorld/.venv-1/Scripts/python.exe scripts/run_scheduler.py --goal \"Generate a story about something suspicious.\""
+    ]
+  },
+  "agent_policy": {
+    "prioritize_root_cause_fix": true,
+    "avoid_mock_fallback_for_llm": true,
+    "keep_public_output_keys_stable": true,
+    "preserve_idempotency_paths": true
+  }
+}

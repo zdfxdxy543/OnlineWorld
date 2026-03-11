@@ -473,3 +473,36 @@
 - 遗留问题：
 - 下一步：
 ```
+
+### 2026-03-11（补充）
+
+- 完成：
+	1. 网盘前端页面改造为“文件获取页”：必须输入 `resource_id + access_code` 才可查看文件与下载。
+	2. 网盘后端读取与下载接口改为强制鉴权：
+		- `GET /api/v1/netdisk/files/{resource_id}?access_code=...`
+		- `GET /api/v1/netdisk/files/{resource_id}/download?access_code=...`
+	3. 服务层新增按 `resource_id + access_code` 的访问校验路径（含过期检查），避免仅凭 `resource_id` 读取文件。
+	4. 新增面向 AI 的网页生成/接入调度器机器手册：`docs/AI_WEB_GENERATION_PLAYBOOK.json`。
+	5. 前端构建验证通过（`npm run build`）。
+
+- 修改文件：
+	- `frontend/src/forum/views/NetdiskView.vue`
+	- `frontend/src/forum/api/netdiskApi.js`
+	- `backend/app/api/v1/endpoints/netdisk.py`
+	- `backend/app/services/netdisk_service.py`
+	- `backend/app/repositories/netdisk_repository.py`
+	- `backend/app/infrastructure/db/netdisk_repository.py`
+	- `docs/AI_WEB_GENERATION_PLAYBOOK.json`
+
+- 新决策：
+	1. 网盘“查看/下载”属于受保护读操作，默认必须带访问凭证，不再开放无密码直读。
+	2. 访问控制统一放在 Service 层（`validate_file_access`），Endpoint 仅做参数映射与 HTTP 语义转换。
+
+- 遗留问题：
+	1. 目前仍保留 `GET /api/v1/netdisk/files` 列表接口；若产品要求更严格，可后续增加权限限制或下线该接口。
+	2. 尚未为网盘“凭证访问流”补自动化端到端测试（当前为手工验证 + 构建验证）。
+
+- 下一步：
+	1. 为网盘访问流补测试：错误凭证、过期凭证、成功读取、成功下载。
+	2. 评估是否将文件列表接口改为仅内部/管理用途。
+	3. 将同类“凭证保护读”模式推广到后续商店附件、私信附件站点。
