@@ -36,6 +36,7 @@ onMounted(async () => {
         <RouterLink to="/forum/board/bazaar">Bazaar</RouterLink>
         <RouterLink to="/forum/board/whispers">Whispers</RouterLink>
         <RouterLink to="/forum/user/aria">My Profile</RouterLink>
+        <RouterLink to="/news">Switch to GreenLeaf News</RouterLink>
         <RouterLink to="/netdisk">Switch to BlueBox Netdisk</RouterLink>
       </nav>
       <div class="search-row">

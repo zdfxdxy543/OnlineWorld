@@ -11,6 +11,7 @@ import { RouterLink, RouterView } from 'vue-router'
       </div>
       <nav class="nd-nav">
         <RouterLink to="/netdisk" class="nd-nav__link">File Archive</RouterLink>
+        <RouterLink to="/news" class="nd-nav__link">GreenLeaf News</RouterLink>
         <RouterLink to="/forum" class="nd-nav__link nd-nav__link--alt">↩ Back to Forum</RouterLink>
       </nav>
     </header>

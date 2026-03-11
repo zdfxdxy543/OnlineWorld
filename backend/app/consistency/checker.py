@@ -51,3 +51,19 @@ class ConsistencyChecker:
         if access_code and access_code not in content:
             violations.append("missing-netdisk-access-code")
         return violations
+
+    def validate_news_references(
+        self,
+        *,
+        content: str,
+        related_thread_ids: list[str],
+        related_share_ids: list[str],
+    ) -> list[str]:
+        violations: list[str] = []
+        for thread_id in related_thread_ids:
+            if thread_id and thread_id not in content:
+                violations.append(f"missing-related-thread-id:{thread_id}")
+        for share_id in related_share_ids:
+            if share_id and share_id not in content:
+                violations.append(f"missing-related-share-id:{share_id}")
+        return violations

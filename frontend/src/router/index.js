@@ -3,6 +3,8 @@ import ForumHomeView from '../forum/views/ForumHomeView.vue'
 import ForumApp from '../forum/ForumApp.vue'
 import NetdiskApp from '../netdisk/NetdiskApp.vue'
 import NetdiskView from '../forum/views/NetdiskView.vue'
+import NewsApp from '../news/NewsApp.vue'
+import NewsHomeView from '../news/views/NewsHomeView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -45,6 +47,22 @@ const router = createRouter({
           path: '',
           name: 'netdisk-home',
           component: NetdiskView,
+        },
+      ],
+    },
+    {
+      path: '/news',
+      component: NewsApp,
+      children: [
+        {
+          path: '',
+          name: 'news-home',
+          component: NewsHomeView,
+        },
+        {
+          path: 'article/:articleId',
+          name: 'news-article-detail',
+          component: () => import('../news/views/ArticleDetailView.vue'),
         },
       ],
     },

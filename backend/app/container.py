@@ -6,6 +6,7 @@ from app.consistency.checker import ConsistencyChecker
 from app.core.config import Settings
 from app.infrastructure.db.forum_repository import SQLiteForumRepository
 from app.infrastructure.db.netdisk_repository import SQLiteNetdiskRepository
+from app.infrastructure.db.news_repository import SQLiteNewsRepository
 from app.infrastructure.db.session import DatabaseSessionManager
 from app.infrastructure.db.world_repository import SQLiteWorldRepository
 from app.infrastructure.llm.base import AbstractLLMClient
@@ -16,9 +17,11 @@ from app.infrastructure.llm.structured_content import (
 )
 from app.infrastructure.llm.siliconflow_planner import SiliconFlowStoryPlanner
 from app.repositories.forum_repository import AbstractForumRepository
+from app.repositories.news_repository import AbstractNewsRepository
 from app.services.forum_service import ForumService
 from app.services.generation_service import GenerationService
 from app.services.netdisk_service import NetdiskService
+from app.services.news_service import NewsService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
 from app.simulation.planner import AbstractStoryPlanner, RuleBasedStoryPlanner
@@ -26,6 +29,7 @@ from app.simulation.scheduler import StoryScheduler
 from app.simulation.tool_registry import ToolRegistry
 from app.simulation.tools.forum_pipeline import ForumPipelineToolExecutor
 from app.simulation.tools.netdisk_pipeline import NetdiskPipelineToolExecutor
+from app.simulation.tools.news_pipeline import NewsPipelineToolExecutor
 
 
 @dataclass(slots=True)
@@ -35,6 +39,7 @@ class ServiceContainer:
     world_service: WorldService
     forum_service: ForumService
     netdisk_service: NetdiskService
+    news_service: NewsService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
 
@@ -68,6 +73,9 @@ def build_container(settings: Settings) -> ServiceContainer:
     netdisk_repository = SQLiteNetdiskRepository(database_session_manager)
     netdisk_repository.initialize()
     netdisk_service = NetdiskService(netdisk_repository, storage_dir=settings.netdisk_storage_dir)
+    news_repository: AbstractNewsRepository = SQLiteNewsRepository(database_session_manager)
+    news_repository.initialize()
+    news_service = NewsService(news_repository)
 
     content_generator: AbstractStructuredContentGenerator = SiliconFlowStructuredContentGenerator(
         api_key=settings.siliconflow_api_key,
@@ -80,6 +88,13 @@ def build_container(settings: Settings) -> ServiceContainer:
         executors=[
             NetdiskPipelineToolExecutor(netdisk_service, content_generator),
             ForumPipelineToolExecutor(forum_service, consistency_checker, netdisk_service, content_generator),
+            NewsPipelineToolExecutor(
+                news_service,
+                consistency_checker,
+                content_generator,
+                forum_service,
+                netdisk_service,
+            ),
         ]
     )
 
@@ -98,6 +113,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         world_service=world_service,
         forum_service=forum_service,
         netdisk_service=netdisk_service,
+        news_service=news_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,
     )

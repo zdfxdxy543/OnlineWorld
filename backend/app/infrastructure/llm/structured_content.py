@@ -295,6 +295,53 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
         return system, user
 
     @staticmethod
+    def _prompt_news_publish_article(generation_request: ContentGenerationRequest) -> tuple[str, str]:
+        ctx = generation_request.fact_context
+        category = str(ctx.get("category", "community"))
+        title_seed = str(ctx.get("requested_title", ""))
+        content_seed = str(ctx.get("requested_content", ""))
+        related_thread_ids = ctx.get("requested_related_thread_ids", [])
+        related_share_ids = ctx.get("requested_related_share_ids", [])
+
+        if not isinstance(related_thread_ids, list):
+            related_thread_ids = []
+        if not isinstance(related_share_ids, list):
+            related_share_ids = []
+
+        thread_block = ""
+        share_block = ""
+        if related_thread_ids:
+            thread_block = (
+                "\nYou MUST include each thread id verbatim in the article body: "
+                + ", ".join(str(item) for item in related_thread_ids if str(item).strip())
+            )
+        if related_share_ids:
+            share_block = (
+                "\nYou MUST include each share id verbatim in the article body: "
+                + ", ".join(str(item) for item in related_share_ids if str(item).strip())
+            )
+
+        system = (
+            "You are writing a publish-ready news article for an in-world online news site. "
+            "Write in English with a neutral journalistic tone. "
+            "Do not include meta commentary or prompt instructions. "
+            'Return a JSON object with exactly two keys: "title" and "content".'
+        )
+        user = (
+            f"Category: {category}\n"
+            f"Requested title hint: {title_seed}\n"
+            f"Core facts to report: {content_seed}\n"
+            f"{thread_block}"
+            f"{share_block}\n\n"
+            "Requirements:\n"
+            "- title: concise newsroom headline, under 100 chars\n"
+            "- content: 2-4 paragraphs, concrete and factual\n"
+            "- if related ids are given above, include them exactly as written\n"
+            '- Return JSON: {"title":"<headline>","content":"<article body>"}'
+        )
+        return system, user
+
+    @staticmethod
     def _prompt_generic(generation_request: ContentGenerationRequest) -> tuple[str, str]:
         desired = ", ".join(f'"{f}"' for f in generation_request.desired_fields)
         ctx_summary = json.dumps(generation_request.fact_context, ensure_ascii=False)
@@ -317,6 +364,8 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
             system_prompt, user_prompt_text = self._prompt_netdisk_upload(generation_request)
         elif capability == "forum.create_thread":
             system_prompt, user_prompt_text = self._prompt_forum_create_thread(generation_request)
+        elif capability == "news.publish_article":
+            system_prompt, user_prompt_text = self._prompt_news_publish_article(generation_request)
         else:
             system_prompt, user_prompt_text = self._prompt_generic(generation_request)
 
