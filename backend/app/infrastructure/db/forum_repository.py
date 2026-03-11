@@ -1,0 +1,581 @@
+from __future__ import annotations
+
+import sqlite3
+
+from app.infrastructure.db.session import DatabaseSessionManager
+from app.repositories.forum_repository import (
+    AbstractForumRepository,
+    BoardSummary,
+    ForumStats,
+    ThreadDetail,
+    ThreadPost,
+    ThreadSummary,
+    UserProfile,
+)
+
+
+class SQLiteForumRepository(AbstractForumRepository):
+    def __init__(self, session_manager: DatabaseSessionManager) -> None:
+        self.session_manager = session_manager
+
+    def initialize(self) -> None:
+        self._create_tables()
+        self._seed_if_empty()
+
+    def get_stats(self) -> ForumStats:
+        with self.session_manager.connect() as conn:
+            stats_row = conn.execute("SELECT online_users FROM forum_stats LIMIT 1").fetchone()
+            thread_count = conn.execute("SELECT COUNT(1) AS count FROM threads").fetchone()["count"]
+            post_count = conn.execute("SELECT COUNT(1) AS count FROM posts").fetchone()["count"]
+
+        return ForumStats(
+            online_users=stats_row["online_users"] if stats_row else 0,
+            total_threads=thread_count,
+            total_posts=post_count,
+        )
+
+    def list_boards(self) -> list[BoardSummary]:
+        with self.session_manager.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    b.slug,
+                    b.name,
+                    b.description,
+                    b.moderator,
+                    (SELECT COUNT(1) FROM threads t WHERE t.board_slug = b.slug) AS thread_count,
+                    (SELECT COUNT(1)
+                     FROM posts p
+                     JOIN threads t ON t.id = p.thread_id
+                     WHERE t.board_slug = b.slug) AS post_count
+                FROM boards b
+                ORDER BY b.sort_order ASC
+                """
+            ).fetchall()
+
+        result: list[BoardSummary] = []
+        for row in rows:
+            latest = self._get_latest_thread_for_board(row["slug"])
+            result.append(
+                BoardSummary(
+                    slug=row["slug"],
+                    name=row["name"],
+                    description=row["description"],
+                    moderator=row["moderator"],
+                    threads=row["thread_count"],
+                    posts=row["post_count"],
+                    latest_thread=latest,
+                )
+            )
+        return result
+
+    def list_threads(self, board_slug: str) -> tuple[BoardSummary | None, list[ThreadSummary]]:
+        with self.session_manager.connect() as conn:
+            board_row = conn.execute(
+                "SELECT slug, name, description, moderator FROM boards WHERE slug = ?",
+                (board_slug,),
+            ).fetchone()
+            if board_row is None:
+                return None, []
+
+            thread_rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                FROM threads
+                WHERE board_slug = ?
+                ORDER BY pinned DESC, last_reply_at DESC
+                """,
+                (board_slug,),
+            ).fetchall()
+
+            post_count = conn.execute(
+                """
+                SELECT COUNT(1) AS count
+                FROM posts p
+                JOIN threads t ON t.id = p.thread_id
+                WHERE t.board_slug = ?
+                """,
+                (board_slug,),
+            ).fetchone()["count"]
+
+        threads = [self._map_thread_summary(row) for row in thread_rows]
+        board = BoardSummary(
+            slug=board_row["slug"],
+            name=board_row["name"],
+            description=board_row["description"],
+            moderator=board_row["moderator"],
+            threads=len(threads),
+            posts=post_count,
+            latest_thread=threads[0] if threads else None,
+        )
+        return board, threads
+
+    def get_thread(self, thread_id: str) -> ThreadDetail | None:
+        with self.session_manager.connect() as conn:
+            thread_row = conn.execute(
+                """
+                SELECT
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                FROM threads
+                WHERE id = ?
+                """,
+                (thread_id,),
+            ).fetchone()
+            if thread_row is None:
+                return None
+
+            post_rows = conn.execute(
+                """
+                SELECT id, author_id, created_at, content
+                FROM posts
+                WHERE thread_id = ?
+                ORDER BY created_at ASC
+                """,
+                (thread_id,),
+            ).fetchall()
+
+        summary = self._map_thread_summary(thread_row)
+        posts = [
+            ThreadPost(
+                id=row["id"],
+                author_id=row["author_id"],
+                created_at=row["created_at"],
+                content=row["content"],
+            )
+            for row in post_rows
+        ]
+        return ThreadDetail(
+            id=summary.id,
+            board_slug=summary.board_slug,
+            title=summary.title,
+            author_id=summary.author_id,
+            replies=summary.replies,
+            views=summary.views,
+            last_reply_by_id=summary.last_reply_by_id,
+            last_reply_at=summary.last_reply_at,
+            pinned=summary.pinned,
+            tags=summary.tags,
+            posts=posts,
+        )
+
+    def get_user_profile(self, user_id: str) -> UserProfile | None:
+        with self.session_manager.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    name,
+                    title,
+                    join_date,
+                    posts,
+                    reputation,
+                    status,
+                    signature,
+                    bio
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return UserProfile(
+            id=row["id"],
+            name=row["name"],
+            title=row["title"],
+            join_date=row["join_date"],
+            posts=row["posts"],
+            reputation=row["reputation"],
+            status=row["status"],
+            signature=row["signature"],
+            bio=row["bio"],
+        )
+
+    def get_recent_threads_by_author(self, user_id: str, limit: int = 5) -> list[ThreadSummary]:
+        with self.session_manager.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                FROM threads
+                WHERE author_id = ?
+                ORDER BY last_reply_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+
+        return [self._map_thread_summary(row) for row in rows]
+
+    def get_hot_threads(self, limit: int = 5) -> list[ThreadSummary]:
+        with self.session_manager.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                FROM threads
+                ORDER BY views DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._map_thread_summary(row) for row in rows]
+
+    def _get_latest_thread_for_board(self, board_slug: str) -> ThreadSummary | None:
+        with self.session_manager.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                FROM threads
+                WHERE board_slug = ?
+                ORDER BY pinned DESC, last_reply_at DESC
+                LIMIT 1
+                """,
+                (board_slug,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._map_thread_summary(row)
+
+    @staticmethod
+    def _map_thread_summary(row: sqlite3.Row) -> ThreadSummary:
+        tags = [value.strip() for value in (row["tags"] or "").split(",") if value.strip()]
+        return ThreadSummary(
+            id=row["id"],
+            board_slug=row["board_slug"],
+            title=row["title"],
+            author_id=row["author_id"],
+            replies=row["replies"],
+            views=row["views"],
+            last_reply_by_id=row["last_reply_by_id"],
+            last_reply_at=row["last_reply_at"],
+            pinned=bool(row["pinned"]),
+            tags=tags,
+        )
+
+    def _create_tables(self) -> None:
+        with self.session_manager.connect() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS forum_stats (
+                    online_users INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    join_date TEXT NOT NULL,
+                    posts INTEGER NOT NULL,
+                    reputation INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    bio TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS boards (
+                    slug TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    moderator TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS threads (
+                    id TEXT PRIMARY KEY,
+                    board_slug TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    author_id TEXT NOT NULL,
+                    replies INTEGER NOT NULL,
+                    views INTEGER NOT NULL,
+                    last_reply_by_id TEXT NOT NULL,
+                    last_reply_at TEXT NOT NULL,
+                    pinned INTEGER NOT NULL DEFAULT 0,
+                    tags TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(board_slug) REFERENCES boards(slug),
+                    FOREIGN KEY(author_id) REFERENCES users(id),
+                    FOREIGN KEY(last_reply_by_id) REFERENCES users(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS posts (
+                    id TEXT PRIMARY KEY,
+                    thread_id TEXT NOT NULL,
+                    author_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    FOREIGN KEY(thread_id) REFERENCES threads(id),
+                    FOREIGN KEY(author_id) REFERENCES users(id)
+                );
+                """
+            )
+            conn.commit()
+
+    def _seed_if_empty(self) -> None:
+        with self.session_manager.connect() as conn:
+            user_count = conn.execute("SELECT COUNT(1) AS count FROM users").fetchone()["count"]
+            if user_count > 0:
+                return
+
+            conn.execute("INSERT INTO forum_stats (online_users) VALUES (?)", (187,))
+
+            conn.executemany(
+                """
+                INSERT INTO users (id, name, title, join_date, posts, reputation, status, signature, bio)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "aria",
+                        "Aria_Threadweaver",
+                        "Senior Archivist",
+                        "2000-08-21",
+                        3488,
+                        632,
+                        "Online",
+                        "Facts first. Stories second.",
+                        "Tracks timeline drift and cross-site contradictions. Collects old screenshots.",
+                    ),
+                    (
+                        "milo",
+                        "Milo_Bazaar",
+                        "Trusted Trader",
+                        "2001-02-12",
+                        1560,
+                        401,
+                        "Away",
+                        "Every listing leaves a trail.",
+                        "Maintains escrow records and flags strange transaction chains.",
+                    ),
+                    (
+                        "eve",
+                        "Eve_Observer",
+                        "Rumor Hunter",
+                        "2001-09-03",
+                        905,
+                        287,
+                        "Online",
+                        "Truth echoes in side channels.",
+                        "Specializes in whisper network patterns and anonymous drop verification.",
+                    ),
+                ],
+            )
+
+            conn.executemany(
+                """
+                INSERT INTO boards (slug, name, description, moderator, sort_order)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "town-square",
+                        "Town Square",
+                        "Public forum for world news, big stories, and daily chatter.",
+                        "Mod_Nova",
+                        1,
+                    ),
+                    (
+                        "bazaar",
+                        "Bazaar",
+                        "Buy, sell, trade, and inspect suspicious listings.",
+                        "TradeMarshal",
+                        2,
+                    ),
+                    (
+                        "whispers",
+                        "Whispers",
+                        "Private leaks, rumors, and detective work from the shadows.",
+                        "QuietSignal",
+                        3,
+                    ),
+                    (
+                        "station-terminal",
+                        "Station Terminal",
+                        "System updates, patch notes, and simulation event logs.",
+                        "SYS_OP",
+                        4,
+                    ),
+                ],
+            )
+
+            conn.executemany(
+                """
+                INSERT INTO threads (
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "t1001",
+                        "town-square",
+                        "[Investigation] Missing courier spotted near old exchange",
+                        "aria",
+                        48,
+                        2310,
+                        "eve",
+                        "2001-11-09 22:16",
+                        1,
+                        "investigation,timeline",
+                    ),
+                    (
+                        "t1004",
+                        "town-square",
+                        "Daily World Pulse - Nov 9",
+                        "milo",
+                        23,
+                        980,
+                        "aria",
+                        "2001-11-10 00:03",
+                        0,
+                        "news,digest",
+                    ),
+                    (
+                        "t2003",
+                        "bazaar",
+                        "[For Sale] Antique console with hidden data port",
+                        "milo",
+                        31,
+                        1702,
+                        "aria",
+                        "2001-11-09 21:41",
+                        0,
+                        "listing,hardware",
+                    ),
+                    (
+                        "t3006",
+                        "whispers",
+                        "[Leak] Anonymous file drop references fake witness",
+                        "eve",
+                        64,
+                        2910,
+                        "eve",
+                        "2001-11-10 01:28",
+                        1,
+                        "leak,evidence,rumor",
+                    ),
+                ],
+            )
+
+            conn.executemany(
+                """
+                INSERT INTO posts (id, thread_id, author_id, created_at, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        "p1",
+                        "t1001",
+                        "aria",
+                        "2001-11-09 18:42",
+                        "Witness report says the courier logged into the bazaar account at 17:58, but no valid transaction record exists. Posting structured facts below for review.",
+                    ),
+                    (
+                        "p2",
+                        "t1001",
+                        "eve",
+                        "2001-11-09 22:16",
+                        "I found two rumor nodes repeating the same wrong locker code. Might be deliberate misinformation. Can anyone verify terminal camera logs?",
+                    ),
+                    (
+                        "p3",
+                        "t1004",
+                        "milo",
+                        "2001-11-09 09:00",
+                        "Forum activity up 12 percent, bazaar delistings up 4 percent, and whispers are flooding with false package IDs. Keep your logs clean.",
+                    ),
+                    (
+                        "p4",
+                        "t2003",
+                        "milo",
+                        "2001-11-09 16:21",
+                        "Listed for 240 credits. Verified serial attached in listing metadata. No off-ledger bids accepted.",
+                    ),
+                    (
+                        "p5",
+                        "t2003",
+                        "aria",
+                        "2001-11-09 21:41",
+                        "Cross-check complete. Serial exists in maintenance archive; status is valid. Recommend trusted escrow only.",
+                    ),
+                    (
+                        "p6",
+                        "t3006",
+                        "eve",
+                        "2001-11-09 20:03",
+                        "Drop claims witness from sector 4, but the account was created 3 hours before posting. Sharing hash and checksum for independent review.",
+                    ),
+                    (
+                        "p7",
+                        "t3006",
+                        "aria",
+                        "2001-11-09 22:44",
+                        "Checksum does not match public mirror. Please treat as unverified until we map propagation path.",
+                    ),
+                    (
+                        "p8",
+                        "t3006",
+                        "eve",
+                        "2001-11-10 01:28",
+                        "Updated: first appearance traced to kiosk relay B12. Escalating to station terminal moderators.",
+                    ),
+                ],
+            )
+            conn.commit()

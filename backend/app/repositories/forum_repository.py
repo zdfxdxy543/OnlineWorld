@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass(slots=True)
+class ForumStats:
+    online_users: int
+    total_threads: int
+    total_posts: int
+
+
+@dataclass(slots=True)
+class ThreadSummary:
+    id: str
+    board_slug: str
+    title: str
+    author_id: str
+    replies: int
+    views: int
+    last_reply_by_id: str
+    last_reply_at: str
+    pinned: bool
+    tags: list[str]
+
+
+@dataclass(slots=True)
+class BoardSummary:
+    slug: str
+    name: str
+    description: str
+    moderator: str
+    threads: int
+    posts: int
+    latest_thread: ThreadSummary | None
+
+
+@dataclass(slots=True)
+class ThreadPost:
+    id: str
+    author_id: str
+    created_at: str
+    content: str
+
+
+@dataclass(slots=True)
+class ThreadDetail(ThreadSummary):
+    posts: list[ThreadPost]
+
+
+@dataclass(slots=True)
+class UserProfile:
+    id: str
+    name: str
+    title: str
+    join_date: str
+    posts: int
+    reputation: int
+    status: str
+    signature: str
+    bio: str
+
+
+class AbstractForumRepository(ABC):
+    @abstractmethod
+    def initialize(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_stats(self) -> ForumStats:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_boards(self) -> list[BoardSummary]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_threads(self, board_slug: str) -> tuple[BoardSummary | None, list[ThreadSummary]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_thread(self, thread_id: str) -> ThreadDetail | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_user_profile(self, user_id: str) -> UserProfile | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_recent_threads_by_author(self, user_id: str, limit: int = 5) -> list[ThreadSummary]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_hot_threads(self, limit: int = 5) -> list[ThreadSummary]:
+        raise NotImplementedError

@@ -1,21 +1,33 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
+import ForumHomeView from '../forum/views/ForumHomeView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      name: 'home',
-      component: HomeView,
+      name: 'forum-home',
+      component: ForumHomeView,
     },
     {
-      path: '/about',
-      name: 'about',
-      // route level code-splitting
-      // this generates a separate chunk (About.[hash].js) for this route
-      // which is lazy-loaded when the route is visited.
-      component: () => import('../views/AboutView.vue'),
+      path: '/board/:slug',
+      name: 'board',
+      component: () => import('../forum/views/BoardView.vue'),
+    },
+    {
+      path: '/thread/:threadId',
+      name: 'thread-detail',
+      component: () => import('../forum/views/ThreadDetailView.vue'),
+    },
+    {
+      path: '/user/:userId',
+      name: 'user-profile',
+      component: () => import('../forum/views/UserProfileView.vue'),
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('../forum/views/NotFoundView.vue'),
     },
   ],
 })
