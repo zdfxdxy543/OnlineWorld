@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ThreadSummaryResponse(BaseModel):
@@ -63,3 +63,24 @@ class UserProfileResponse(BaseModel):
 class UserProfileWithThreadsResponse(BaseModel):
     user: UserProfileResponse
     recent_threads: list[ThreadSummaryResponse]
+
+
+class CreateThreadRequest(BaseModel):
+    board_slug: str
+    author_id: str
+    title: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class ReplyThreadRequest(BaseModel):
+    author_id: str
+    content: str
+
+
+class CreateThreadResponse(BaseModel):
+    thread: ThreadDetailResponse
+
+
+class ReplyThreadResponse(BaseModel):
+    post: ThreadPostResponse

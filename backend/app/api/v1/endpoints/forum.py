@@ -6,7 +6,11 @@ from app.repositories.forum_repository import BoardSummary, ThreadDetail, Thread
 from app.schemas.forum import (
     BoardSummaryResponse,
     BoardThreadsResponse,
+    CreateThreadRequest,
+    CreateThreadResponse,
     ForumStatsResponse,
+    ReplyThreadRequest,
+    ReplyThreadResponse,
     ThreadDetailResponse,
     ThreadPostResponse,
     ThreadSummaryResponse,
@@ -134,3 +138,34 @@ def get_hot_threads(
 ) -> list[ThreadSummaryResponse]:
     threads = request.app.state.container.forum_service.get_hot_threads(limit)
     return [_map_thread_summary(thread) for thread in threads]
+
+
+@router.post("/threads", response_model=CreateThreadResponse)
+def create_thread(payload: CreateThreadRequest, request: Request) -> CreateThreadResponse:
+    thread = request.app.state.container.forum_service.create_thread(
+        board_slug=payload.board_slug,
+        author_id=payload.author_id,
+        title=payload.title,
+        content=payload.content,
+        tags=payload.tags,
+    )
+    return CreateThreadResponse(thread=_map_thread_detail(thread))
+
+
+@router.post("/threads/{thread_id}/replies", response_model=ReplyThreadResponse)
+def reply_thread(thread_id: str, payload: ReplyThreadRequest, request: Request) -> ReplyThreadResponse:
+    post = request.app.state.container.forum_service.reply_thread(
+        thread_id=thread_id,
+        author_id=payload.author_id,
+        content=payload.content,
+    )
+    if post is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return ReplyThreadResponse(
+        post=ThreadPostResponse(
+            id=post.id,
+            author_id=post.author_id,
+            created_at=post.created_at,
+            content=post.content,
+        )
+    )

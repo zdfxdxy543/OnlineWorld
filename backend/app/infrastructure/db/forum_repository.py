@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
+from itertools import count
 
 from app.infrastructure.db.session import DatabaseSessionManager
 from app.repositories.forum_repository import (
@@ -17,10 +19,13 @@ from app.repositories.forum_repository import (
 class SQLiteForumRepository(AbstractForumRepository):
     def __init__(self, session_manager: DatabaseSessionManager) -> None:
         self.session_manager = session_manager
+        self._thread_counter = count(10000)
+        self._post_counter = count(20000)
 
     def initialize(self) -> None:
         self._create_tables()
         self._seed_if_empty()
+        self._sync_counters()
 
     def get_stats(self) -> ForumStats:
         with self.session_manager.connect() as conn:
@@ -212,6 +217,16 @@ class SQLiteForumRepository(AbstractForumRepository):
             bio=row["bio"],
         )
 
+    def user_exists(self, user_id: str) -> bool:
+        with self.session_manager.connect() as conn:
+            row = conn.execute("SELECT 1 AS exists_flag FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row is not None
+
+    def list_user_ids(self) -> list[str]:
+        with self.session_manager.connect() as conn:
+            rows = conn.execute("SELECT id FROM users ORDER BY join_date ASC, id ASC").fetchall()
+        return [row["id"] for row in rows]
+
     def get_recent_threads_by_author(self, user_id: str, limit: int = 5) -> list[ThreadSummary]:
         with self.session_manager.connect() as conn:
             rows = conn.execute(
@@ -259,6 +274,90 @@ class SQLiteForumRepository(AbstractForumRepository):
                 (limit,),
             ).fetchall()
         return [self._map_thread_summary(row) for row in rows]
+
+    def create_thread(
+        self,
+        *,
+        board_slug: str,
+        author_id: str,
+        title: str,
+        content: str,
+        tags: list[str],
+    ) -> ThreadDetail:
+        thread_id = f"t{next(self._thread_counter)}"
+        post_id = f"p{next(self._post_counter)}"
+        now = datetime.now(timezone.utc).isoformat()
+        tags_text = ",".join(tag.strip() for tag in tags if tag.strip())
+
+        with self.session_manager.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO threads (
+                    id,
+                    board_slug,
+                    title,
+                    author_id,
+                    replies,
+                    views,
+                    last_reply_by_id,
+                    last_reply_at,
+                    pinned,
+                    tags
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (thread_id, board_slug, title, author_id, 0, 0, author_id, now, 0, tags_text),
+            )
+            conn.execute(
+                """
+                INSERT INTO posts (id, thread_id, author_id, created_at, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (post_id, thread_id, author_id, now, content),
+            )
+            conn.execute("UPDATE users SET posts = posts + 1 WHERE id = ?", (author_id,))
+            conn.commit()
+
+        thread = self.get_thread(thread_id)
+        if thread is None:
+            raise RuntimeError("Failed to load newly created thread")
+        return thread
+
+    def reply_thread(self, *, thread_id: str, author_id: str, content: str) -> ThreadPost | None:
+        now = datetime.now(timezone.utc).isoformat()
+        post_id = f"p{next(self._post_counter)}"
+
+        with self.session_manager.connect() as conn:
+            existing = conn.execute("SELECT id FROM threads WHERE id = ?", (thread_id,)).fetchone()
+            if existing is None:
+                return None
+
+            conn.execute(
+                """
+                INSERT INTO posts (id, thread_id, author_id, created_at, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (post_id, thread_id, author_id, now, content),
+            )
+            conn.execute(
+                """
+                UPDATE threads
+                SET replies = replies + 1,
+                    last_reply_by_id = ?,
+                    last_reply_at = ?
+                WHERE id = ?
+                """,
+                (author_id, now, thread_id),
+            )
+            conn.execute("UPDATE users SET posts = posts + 1 WHERE id = ?", (author_id,))
+            conn.commit()
+
+        return ThreadPost(
+            id=post_id,
+            author_id=author_id,
+            created_at=now,
+            content=content,
+        )
 
     def _get_latest_thread_for_board(self, board_slug: str) -> ThreadSummary | None:
         with self.session_manager.connect() as conn:
@@ -579,3 +678,15 @@ class SQLiteForumRepository(AbstractForumRepository):
                 ],
             )
             conn.commit()
+
+    def _sync_counters(self) -> None:
+        with self.session_manager.connect() as conn:
+            thread_row = conn.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 9999) AS max_id FROM threads"
+            ).fetchone()
+            post_row = conn.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 19999) AS max_id FROM posts"
+            ).fetchone()
+
+        self._thread_counter = count(int(thread_row["max_id"]) + 1)
+        self._post_counter = count(int(post_row["max_id"]) + 1)

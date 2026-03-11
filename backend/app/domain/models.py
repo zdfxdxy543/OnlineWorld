@@ -14,6 +14,21 @@ class AgentProfile:
 
 
 @dataclass(slots=True)
+class AgentSummary:
+    agent_id: str
+    display_name: str
+    status: str
+    gender: str
+    age_range: str
+    occupation: str
+    residence_city: str
+    native_language: str
+    personality_traits_json: str
+    values_json: str
+    hobbies_json: str
+
+
+@dataclass(slots=True)
 class WorldResource:
     resource_id: str
     resource_type: str

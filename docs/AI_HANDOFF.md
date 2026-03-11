@@ -358,20 +358,21 @@
 
 - **产品方向：** 已初步明确
 - **架构设计：** 已有交接文档和后端骨架级设计，仍需正式系统架构文档
-- **后端实现：** 已落地最小 `FastAPI` 骨架、健康检查、世界摘要与演示发帖 API
-- **前端实现：** 仍为模板
-- **AI 叙事引擎：** 已有 `mock` LLM 接口与“事实先行、文本后生成”演示链路
+- **后端实现：** 已具备 SQL 驱动的论坛读写 API、SQL 驱动的 actor/world 仓储、AI 方法调用 API、工具注册中心与第一版可扩展调度器
+- **前端实现：** 已改为论坛站点并切换为后端 API 拉取模式
+- **AI 叙事引擎：** 已有规则规划器与 `SiliconFlow` 规划器适配入口，支持 capability 约束、跨步骤引用解析与论坛文本清洗
 - **侦探事件系统：** 未实现
 
 ## 13. 下一步（最近优先级）
 
 建议最近一次开发从以下任务开始：
 
-1. 输出正式系统架构文档
-2. 设计核心实体和 JSON / TypeScript / Python 数据结构
-3. 把 `InMemory` 仓储替换为真实数据库实现
-4. 为论坛、商店、私信建立独立服务层与 API
-5. 改造前端首页为项目控制台
+1. 将商店、私信站点按同一 Capability 协议接入工具注册中心
+2. 为调度器补充跨站依赖图、失败恢复与重试策略
+3. 增加事件日志持久化表（调度运行、步骤执行、失败原因）
+4. 为 AI 方法层补充权限边界、限流与审计
+5. 补全调度器端到端测试（规则规划器 / SiliconFlow 规划器 / SQL actor 流程）
+6. 清理配置安全边界，移除代码中的默认敏感配置并统一改为环境变量注入
 
 ## 14. 变更日志
 
@@ -387,6 +388,42 @@
 - 新增 `GET /api/v1/health`、`GET /api/v1/world/summary`、`POST /api/v1/world/demo-post`
 - 增加 `backend/README.md`、`backend/requirements.txt` 与 `backend/tests/smoke_check.py`
 - 已用 `backend\venv\Scripts\python.exe` 运行烟雾验证，确认核心路由可导入
+
+### 2026-03-11
+
+- 完成：
+	1. 新增论坛写接口：`POST /api/v1/forum/threads`、`POST /api/v1/forum/threads/{thread_id}/replies`
+	2. 新增 AI 接口：`GET /api/v1/ai/capabilities`、`GET /api/v1/ai/actors`、`POST /api/v1/ai/execute`、`POST /api/v1/ai/scheduler/run`
+	3. 落地三层执行链：执行层（`ForumService + Repository`）、方法层（`ForumToolExecutor + ToolRegistry`）、调度层（`StoryScheduler + Planner`）
+	4. 新增通用协议模型（`ActionRequest` / `ActionResult` / `StoryPlan` / `StoryStep` / `SchedulerRunReport`）
+	5. 新增 `SQLiteWorldRepository`，将 actor 主数据切到 SQL，并在初始化时迁移论坛 `users` 到 `agents` 体系
+	6. AI actor 校验已切到 SQL：`actors` 为空时默认选取 SQL 中首个 actor；传入不存在 actor 时接口直接返回 404；调度执行时再次校验 step.actor_id
+	7. 调度器支持 `depends_on` 顺序执行，并支持 `$step_id.output.field` 形式的跨步骤引用解析
+	8. 新增 `SiliconFlow` 规划器适配器，失败时自动回退规则规划器
+	9. 新增论坛内容清洗器，避免模型把提示词、JSON 指令等元文本直接写入帖子内容
+	10. 新增命令行脚本 `backend/scripts/run_scheduler.py`，可直接触发一次调度并打印完整结果
+- 关键决策：
+	1. actor 的 canonical source 改为 SQL 表（`agents`、`agent_site_accounts`、`agent_profiles`），不再以 in-memory 用户作为权威来源
+	2. 新站点接入调度器前，必须先在 capability schema 中暴露真实 `allowed_*` 范围，避免 LLM 幻觉引用不存在对象
+	3. 如果后续步骤依赖前一步创建出的对象，必须使用显式输出引用，不允许继续使用自由拼接的伪 ID
+	4. 文本清洗放在 Tool 执行层，先保证最终入库文本可发布，再考虑更复杂的一致性检查链
+- 已知问题 / 遗留：
+	1. 当前 ToolRegistry 只接入了论坛能力，商店、私信仍未进入统一调度链
+	2. 调度运行结果尚未持久化到专用审计表，失败原因目前只体现在接口返回中
+	3. 缺少调度器和 AI 接口的自动化端到端测试
+	4. 配置层仍需做一次安全清理，敏感配置不应保留默认值
+
+## 16. 调度器开发流程（供后续 AI 遵循）
+
+为避免重蹈旧项目问题，后续开发请严格按以下流程：
+
+1. 先定义 Capability：名称、输入 schema、是否只读
+2. 在执行层实现真实动作：必须落库并返回结构化结果
+3. 在方法层封装 Tool：参数校验、幂等、统一 `ActionResult`
+4. 在调度层编排 `StoryPlan`：仅通过 ToolRegistry 执行步骤
+5. 事件链必须完整：`AgentIntentCreated -> WorldActionExecuted -> FactPersisted`（必要时补充生成与校验事件）
+6. 文本生成必须在事实落库后执行，禁止文本倒推事实
+7. 每次迭代都更新本文件的状态、决策、变更日志
 
 ---
 

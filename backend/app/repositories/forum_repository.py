@@ -88,9 +88,33 @@ class AbstractForumRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def user_exists(self, user_id: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_user_ids(self) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_recent_threads_by_author(self, user_id: str, limit: int = 5) -> list[ThreadSummary]:
         raise NotImplementedError
 
     @abstractmethod
     def get_hot_threads(self, limit: int = 5) -> list[ThreadSummary]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_thread(
+        self,
+        *,
+        board_slug: str,
+        author_id: str,
+        title: str,
+        content: str,
+        tags: list[str],
+    ) -> ThreadDetail:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reply_thread(self, *, thread_id: str, author_id: str, content: str) -> ThreadPost | None:
         raise NotImplementedError

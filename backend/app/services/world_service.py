@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.domain.models import GeneratedPostDraft, WorldSnapshot
+import random
+
+from app.domain.models import AgentProfile, AgentSummary, GeneratedPostDraft, WorldSnapshot
 from app.schemas.world import DemoPostRequest
 from app.services.generation_service import GenerationService
 from app.simulation.engine import SimulationEngine
@@ -20,6 +22,22 @@ class WorldService:
 
     def get_summary(self) -> WorldSnapshot:
         return self.world_repository.get_world_snapshot()
+
+    def list_agents(self) -> list[AgentSummary]:
+        return self.world_repository.list_agents()
+
+    def agent_exists(self, agent_id: str) -> bool:
+        return self.world_repository.agent_exists(agent_id)
+
+    def get_agent(self, agent_id: str) -> AgentProfile:
+        return self.world_repository.get_agent(agent_id)
+
+    def maybe_spawn_random_agent(self, probability: float) -> AgentSummary | None:
+        if probability <= 0:
+            return None
+        if random.random() > probability:
+            return None
+        return self.world_repository.create_random_agent()
 
     def create_demo_post(self, payload: DemoPostRequest) -> GeneratedPostDraft:
         plan = self.simulation_engine.prepare_demo_post(
