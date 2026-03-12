@@ -342,6 +342,34 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
         return system, user
 
     @staticmethod
+    def _prompt_p2pstore_create_product(generation_request: ContentGenerationRequest) -> tuple[str, str]:
+        ctx = generation_request.fact_context
+        name = str(ctx.get("name", ""))
+        category = str(ctx.get("category", "other"))
+        price = ctx.get("price", "")
+        stock = ctx.get("stock", "")
+        seed_description = str(ctx.get("description", ""))
+
+        system = (
+            "You are writing a product listing description for an in-world P2P marketplace. "
+            "Write in English, concise and trustworthy, without hype or meta commentary. "
+            'Return a JSON object with exactly one key: "description".'
+        )
+        user = (
+            f"Product name: {name}\n"
+            f"Category: {category}\n"
+            f"Price: {price}\n"
+            f"Stock: {stock}\n"
+            f"Seed details: {seed_description}\n\n"
+            "Requirements:\n"
+            "- 2-4 sentences, clear and specific.\n"
+            "- Mention condition, key features, and a practical usage hint.\n"
+            "- Do not include markdown, bullet lists, or salesy claims.\n"
+            '- Return JSON: {"description":"<listing description>"}'
+        )
+        return system, user
+
+    @staticmethod
     def _prompt_generic(generation_request: ContentGenerationRequest) -> tuple[str, str]:
         desired = ", ".join(f'"{f}"' for f in generation_request.desired_fields)
         ctx_summary = json.dumps(generation_request.fact_context, ensure_ascii=False)
@@ -366,6 +394,8 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
             system_prompt, user_prompt_text = self._prompt_forum_create_thread(generation_request)
         elif capability == "news.publish_article":
             system_prompt, user_prompt_text = self._prompt_news_publish_article(generation_request)
+        elif capability == "p2pstore.create_product":
+            system_prompt, user_prompt_text = self._prompt_p2pstore_create_product(generation_request)
         else:
             system_prompt, user_prompt_text = self._prompt_generic(generation_request)
 
