@@ -26,18 +26,21 @@
       "tool_pipelines": [
         "backend/app/simulation/tools/netdisk_pipeline.py",
         "backend/app/simulation/tools/forum_pipeline.py",
-        "backend/app/simulation/tools/news_pipeline.py"
+        "backend/app/simulation/tools/news_pipeline.py",
+        "backend/app/simulation/tools/p2pstore_pipeline.py"
       ]
     },
     "frontend": {
       "router": "frontend/src/router/index.js",
       "api_wrappers": [
         "frontend/src/forum/api/*.js",
-        "frontend/src/news/api/*.js"
+        "frontend/src/news/api/*.js",
+        "frontend/src/p2pstore/api/*.js"
       ],
       "views": [
         "frontend/src/forum/views/*.vue",
-        "frontend/src/news/views/*.vue"
+        "frontend/src/news/views/*.vue",
+        "frontend/src/p2pstore/views/*.vue"
       ],
       "site_shell": "frontend/src/netdisk/NetdiskApp.vue"
     }
@@ -191,6 +194,21 @@
       "repair": "reset to single script+template+style block"
     },
     {
+      "failure": "p2pstore endpoint import fails at startup",
+      "cause": "endpoint depends on undefined container injector (e.g., get_p2pstore_service not implemented)",
+      "repair": "align endpoint dependency acquisition with current container pattern (request.app.state.container.<service>)"
+    },
+    {
+      "failure": "FastAPI SyntaxError: parameter without a default follows parameter with a default",
+      "cause": "function signature places Request parameter after Query/default parameters",
+      "repair": "move non-default Request parameter before all default-valued parameters"
+    },
+    {
+      "failure": "p2pstore capability visible but execution unstable",
+      "cause": "create_product input lacks allowed category constraints and missing default seller/category normalization",
+      "repair": "expose allowed_categories in CapabilitySpec input_schema and validate/normalize category + seller_id in execute_facts()"
+    },
+    {
       "failure": "security bypass on file read/download",
       "cause": "endpoint does not require access_code",
       "repair": "enforce resource_id + access_code in service validation path"
@@ -201,7 +219,8 @@
       "Print one sample backend JSON response and verify wrapper return shape matches page expectations",
       "Run one negative credential test and one success test for protected read/download",
       "Cross-check UI field names, endpoint path params, and schema keys are consistent",
-      "For scheduler-integrated features, confirm output keys are referenced by downstream steps"
+      "For scheduler-integrated features, confirm output keys are referenced by downstream steps",
+      "For p2pstore-like sites, run both write capability (generate/publish path) and read capability to ensure end-to-end schedulability"
     ],
     "forbidden_shortcuts": [
       "Do not bind raw response object directly to v-for expecting array",

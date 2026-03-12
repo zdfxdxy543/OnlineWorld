@@ -67,3 +67,35 @@ class GeneratedPostDraft:
     event_trace: list[StoryEvent]
     referenced_resource: WorldResource | None
     facts: list[str]
+
+
+@dataclass(slots=True)
+class Category:
+    slug: str
+    name: str
+    description: str
+
+
+@dataclass(slots=True)
+class Product:
+    product_id: str
+    name: str
+    description: str
+    price: float
+    category: str
+    stock: int
+    seller_id: str
+    created_at: str = field(default_factory=lambda: "2000-01-01T00:00:00")
+    updated_at: str = field(default_factory=lambda: "2000-01-01T00:00:00")
+
+
+@dataclass(slots=True)
+class Order:
+    order_id: str
+    product_id: str
+    quantity: int
+    buyer_id: str
+    seller_id: str
+    total_price: float
+    status: str
+    created_at: str = field(default_factory=lambda: "2000-01-01T00:00:00")

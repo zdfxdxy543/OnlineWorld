@@ -8,6 +8,7 @@ from app.infrastructure.db.forum_repository import SQLiteForumRepository
 from app.infrastructure.db.mainpage_repository import SQLiteMainPageRepository
 from app.infrastructure.db.netdisk_repository import SQLiteNetdiskRepository
 from app.infrastructure.db.news_repository import SQLiteNewsRepository
+from app.infrastructure.db.p2pstore_repository import SQLiteP2PStoreRepository
 from app.infrastructure.db.session import DatabaseSessionManager
 from app.infrastructure.db.world_repository import SQLiteWorldRepository
 from app.infrastructure.llm.base import AbstractLLMClient
@@ -24,6 +25,7 @@ from app.services.generation_service import GenerationService
 from app.services.mainpage_service import MainPageService
 from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
+from app.services.p2pstore_service import P2PStoreService
 from app.services.story_arc_service import StoryArcService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
@@ -40,6 +42,7 @@ from app.simulation.tools.forum_pipeline import ForumPipelineToolExecutor
 from app.simulation.tools.mainpage_pipeline import MainPagePipelineToolExecutor
 from app.simulation.tools.netdisk_pipeline import NetdiskPipelineToolExecutor
 from app.simulation.tools.news_pipeline import NewsPipelineToolExecutor
+from app.simulation.tools.p2pstore_pipeline import P2PStorePipelineToolExecutor
 
 
 @dataclass(slots=True)
@@ -51,6 +54,7 @@ class ServiceContainer:
     forum_service: ForumService
     netdisk_service: NetdiskService
     news_service: NewsService
+    p2pstore_service: P2PStoreService
     mainpage_service: MainPageService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
@@ -93,6 +97,10 @@ def build_container(settings: Settings) -> ServiceContainer:
     news_repository: AbstractNewsRepository = SQLiteNewsRepository(database_session_manager)
     news_repository.initialize()
     news_service = NewsService(news_repository)
+
+    p2pstore_repository = SQLiteP2PStoreRepository(database_session_manager)
+    p2pstore_repository.initialize()
+    p2pstore_service = P2PStoreService(p2pstore_repository)
     mainpage_repository = SQLiteMainPageRepository(database_session_manager)
     mainpage_repository.initialize()
     mainpage_service = MainPageService(mainpage_repository)
@@ -116,6 +124,11 @@ def build_container(settings: Settings) -> ServiceContainer:
                 content_generator,
                 forum_service,
                 netdisk_service,
+            ),
+            P2PStorePipelineToolExecutor(
+                p2pstore_service,
+                consistency_checker,
+                content_generator,
             ),
             MainPagePipelineToolExecutor(mainpage_service, consistency_checker, content_generator),
         ]
@@ -183,6 +196,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         forum_service=forum_service,
         netdisk_service=netdisk_service,
         news_service=news_service,
+        p2pstore_service=p2pstore_service,
         mainpage_service=mainpage_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,

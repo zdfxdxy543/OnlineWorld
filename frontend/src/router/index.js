@@ -5,6 +5,8 @@ import NetdiskApp from '../netdisk/NetdiskApp.vue'
 import NetdiskView from '../forum/views/NetdiskView.vue'
 import NewsApp from '../news/NewsApp.vue'
 import NewsHomeView from '../news/views/NewsHomeView.vue'
+import P2PStoreApp from '../p2pstore/P2PStoreApp.vue'
+import P2PStoreHomeView from '../p2pstore/views/P2PStoreHomeView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -63,6 +65,22 @@ const router = createRouter({
           path: 'article/:articleId',
           name: 'news-article-detail',
           component: () => import('../news/views/ArticleDetailView.vue'),
+        },
+      ],
+    },
+    {
+      path: '/p2pstore',
+      component: P2PStoreApp,
+      children: [
+        {
+          path: '',
+          name: 'p2pstore-home',
+          component: P2PStoreHomeView,
+        },
+        {
+          path: 'product/:productId',
+          name: 'p2pstore-product-detail',
+          component: () => import('../p2pstore/views/P2PStoreProductView.vue'),
         },
       ],
     },
