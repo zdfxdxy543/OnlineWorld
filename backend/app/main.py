@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.container import build_container
@@ -28,7 +31,20 @@ def create_app() -> FastAPI:
             "name": settings.app_name,
             "docs": "/docs",
             "health": f"{settings.api_prefix}/health",
+            "search": "/search",
         }
+
+    @app.get("/search", response_class=HTMLResponse)
+    def read_search_page() -> HTMLResponse:
+        """Serve the 2000s-style search engine frontend"""
+        search_html_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "search.html"
+        if search_html_path.exists():
+            with open(search_html_path, 'r', encoding='utf-8') as f:
+                return HTMLResponse(content=f.read())
+        return HTMLResponse(
+            status_code=404,
+            content="<h1>404</h1><p>Search page not found.</p>"
+        )
 
     @app.get("/main/{slug}", response_class=HTMLResponse)
     def read_generated_main_page(slug: str) -> HTMLResponse:

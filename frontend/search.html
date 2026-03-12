@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>OnlineWorld Search Engine 2000</title>
+    <style>
+        body {
+            background-color: #ffffff;
+            color: #000000;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 13px;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #c0c0c0;
+            padding-bottom: 20px;
+        }
+
+        .logo {
+            font-size: 36px;
+            font-weight: bold;
+            color: #0000ff;
+            margin-bottom: 5px;
+        }
+
+        .logo-subtitle {
+            font-size: 11px;
+            color: #666666;
+        }
+
+        .search-box {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            width: 400px;
+            padding: 8px;
+            font-size: 14px;
+            border: 1px solid #666666;
+            padding: 10px;
+        }
+
+        .search-buttons {
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 2px 8px;
+            margin: 0 5px;
+            background-color: #c0c0c0;
+            border: 1px solid #999999;
+            border-top: 1px solid #ffffff;
+            border-left: 1px solid #ffffff;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+        }
+
+        .btn:active {
+            border-top: 1px solid #999999;
+            border-left: 1px solid #999999;
+        }
+
+        .services {
+            text-align: center;
+            font-size: 11px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #c0c0c0;
+        }
+
+        .services a {
+            color: #0000ff;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+
+        .services a:visited {
+            color: #800080;
+        }
+
+        .services a:hover {
+            text-decoration: underline;
+        }
+
+        .results {
+            margin-top: 30px;
+        }
+
+        .result-item {
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-title {
+            font-size: 14px;
+            color: #0000ff;
+            margin-bottom: 2px;
+        }
+
+        .result-title a {
+            color: #0000ff;
+            text-decoration: none;
+        }
+
+        .result-title a:visited {
+            color: #800080;
+        }
+
+        .result-title a:hover {
+            text-decoration: underline;
+        }
+
+        .result-url {
+            font-size: 12px;
+            color: #008000;
+            margin-bottom: 5px;
+        }
+
+        .result-snippet {
+            font-size: 12px;
+            color: #333333;
+            line-height: 1.5;
+            margin-bottom: 5px;
+        }
+
+        .result-meta {
+            font-size: 11px;
+            color: #666666;
+        }
+
+        .result-type {
+            display: inline-block;
+            background-color: #ffffcc;
+            padding: 1px 3px;
+            margin-right: 5px;
+            border: 1px solid #cccc00;
+        }
+
+        .info-box {
+            background-color: #fffacd;
+            border: 1px solid #daa520;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #666666;
+        }
+
+        .powered-by {
+            text-align: center;
+            font-size: 10px;
+            color: #999999;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #c0c0c0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666666;
+        }
+
+        .error {
+            background-color: #ffcccc;
+            border: 1px solid #ff0000;
+            color: #660000;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        td {
+            padding: 5px;
+            vertical-align: top;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="logo">OnlineWorld</div>
+    <div class="logo-subtitle">The Ancient Web Engine v1.0 - Comprehensive Search</div>
+</div>
+
+<div class="search-box">
+    <form method="get" id="searchForm">
+        <input type="text" name="q" class="search-input" id="searchInput" placeholder="Search forums, products, news, pages...">
+        <div class="search-buttons">
+            <button type="submit" class="btn">Search the Web</button>
+            <button type="reset" class="btn">Clear</button>
+        </div>
+    </form>
+</div>
+
+<div class="services">
+    <a href="/">Home</a> |
+    <a href="/docs">API Docs</a> |
+    <a href="/api/v1/p2pstore/products">Products</a> |
+    <a href="/api/v1/forum/threads">Forum</a> |
+    <a href="/api/v1/news/articles">News</a>
+</div>
+
+<div id="resultsContainer"></div>
+
+<div class="powered-by">
+    Powered by OnlineWorld Search Engine
+</div>
+
+<script>
+// Get search query from URL if present
+function getUrlParameter(name) {
+    const url = new URL(window.location);
+    return url.searchParams.get(name);
+}
+
+const searchQuery = getUrlParameter('q');
+const resultsContainer = document.getElementById('resultsContainer');
+const searchInput = document.getElementById('searchInput');
+
+// When served by Vite dev server, call backend directly.
+function getApiBase() {
+    if (window.location.port === '5173' || window.location.port === '4173') {
+        return 'http://127.0.0.1:8000';
+    }
+    return window.location.origin;
+}
+
+function getFrontendBase() {
+    if (window.location.port === '8000') {
+        return 'http://127.0.0.1:5173';
+    }
+    return window.location.origin;
+}
+
+function toFrontendUrl(pathOrUrl) {
+    if (!pathOrUrl) {
+        return '#';
+    }
+    if (/^https?:\/\//i.test(pathOrUrl)) {
+        return pathOrUrl;
+    }
+    const path = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+    return `${getFrontendBase()}${path}`;
+}
+
+// Set search input value if coming from URL
+if (searchQuery) {
+    searchInput.value = searchQuery;
+    performSearch(searchQuery);
+}
+
+// Handle form submission
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const query = searchInput.value.trim();
+    if (query.length > 0) {
+        window.location.href = '?q=' + encodeURIComponent(query);
+    }
+});
+
+async function performSearch(query) {
+    if (!query || query.trim().length === 0) {
+        resultsContainer.innerHTML = '';
+        return;
+    }
+
+    resultsContainer.innerHTML = '<div class="loading">Searching...</div>';
+
+    // Call the search API
+    const apiUrl = `${getApiBase()}/api/v1/search?q=${encodeURIComponent(query)}&limit=50`;
+
+    try {
+        const response = await fetch(apiUrl, {
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('application/json')) {
+            const body = await response.text();
+            const preview = body.trim().slice(0, 120).replace(/\s+/g, ' ');
+            throw new Error(`Expected JSON response, got ${contentType || 'unknown'} (${preview})`);
+        }
+
+        const data = await response.json();
+        displayResults(data);
+    } catch (error) {
+        resultsContainer.innerHTML = `
+            <div class="error">
+                <strong>Search Error:</strong> ${error.message}
+            </div>
+        `;
+    }
+}
+
+function displayResults(data) {
+    let html = '';
+
+    // Display search info
+    html += `<div class="info-box">`;
+    html += `Found <strong>${data.total_results} results</strong> for "<strong>${escapeHtml(data.query)}</strong>"`;
+    if (data.total_results > 0) {
+        html += ` (displaying ${Math.min(data.results.length, data.total_results)})`;
+    }
+    html += `</div>`;
+
+    if (data.results.length === 0) {
+        html += `
+            <div class="no-results">
+                <p>No results found for "<strong>${escapeHtml(data.query)}</strong>"</p>
+                <p style="font-size: 11px; color: #999999;">
+                    Try different keywords or check our services above.
+                </p>
+            </div>
+        `;
+    } else {
+        html += '<div class="results">';
+        data.results.forEach(result => {
+            html += formatResultItem(result);
+        });
+        html += '</div>';
+    }
+
+    resultsContainer.innerHTML = html;
+}
+
+function formatResultItem(result) {
+    const contentTypeLabel = getContentTypeLabel(result.content_type);
+    const relevancePercent = Math.round(result.relevance_score * 100);
+    const resultUrl = toFrontendUrl(result.url);
+
+    let html = '<div class="result-item">';
+
+    // Title with link
+    html += `<div class="result-title">`;
+    html += `<a href="${escapeHtml(resultUrl)}" target="_blank">${escapeHtml(result.title)}</a>`;
+    html += `</div>`;
+
+    // URL
+    html += `<div class="result-url">${escapeHtml(resultUrl)}</div>`;
+
+    // Type badge
+    html += `<div class="result-meta">`;
+    html += `<span class="result-type">${contentTypeLabel}</span>`;
+    html += `<span>Relevance: ${relevancePercent}%</span>`;
+    if (result.metadata && result.metadata.price) {
+        html += ` | Price: $${result.metadata.price}`;
+    }
+    if (result.metadata && result.metadata.category) {
+        html += ` | Category: ${escapeHtml(result.metadata.category)}`;
+    }
+    html += `</div>`;
+
+    // Description/Snippet
+    html += `<div class="result-snippet">`;
+    html += escapeHtml(truncateText(result.description, 150));
+    html += `</div>`;
+
+    // Created date
+    html += `<div class="result-meta">`;
+    html += `Last updated: ${formatDate(result.created_at)}`;
+    html += `</div>`;
+
+    html += '</div>';
+
+    return html;
+}
+
+function getContentTypeLabel(contentType) {
+    const labels = {
+        'forum_thread': 'Forum Thread',
+        'forum_post': 'Forum Post',
+        'product': 'Product',
+        'order': 'Order',
+        'news': 'News Article',
+        'page': 'Web Page',
+        'netdisk_file': 'File'
+    };
+    return labels[contentType] || contentType;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength).trim() + '...';
+}
+
+function formatDate(isoString) {
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch {
+        return isoString;
+    }
+}
+</script>
+
+</body>
+</html>

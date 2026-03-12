@@ -26,6 +26,7 @@ from app.services.mainpage_service import MainPageService
 from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
 from app.services.p2pstore_service import P2PStoreService
+from app.services.search_service import SearchService
 from app.services.story_arc_service import StoryArcService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
@@ -56,6 +57,7 @@ class ServiceContainer:
     news_service: NewsService
     p2pstore_service: P2PStoreService
     mainpage_service: MainPageService
+    search_service: SearchService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
     life_story_scheduler: StoryScheduler
@@ -104,6 +106,14 @@ def build_container(settings: Settings) -> ServiceContainer:
     mainpage_repository = SQLiteMainPageRepository(database_session_manager)
     mainpage_repository.initialize()
     mainpage_service = MainPageService(mainpage_repository)
+
+    search_service = SearchService(
+        forum_service=forum_service,
+        p2pstore_service=p2pstore_service,
+        news_service=news_service,
+        mainpage_service=mainpage_service,
+        netdisk_service=netdisk_service,
+    )
 
     content_generator: AbstractStructuredContentGenerator = SiliconFlowStructuredContentGenerator(
         api_key=settings.siliconflow_api_key,
@@ -198,6 +208,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         news_service=news_service,
         p2pstore_service=p2pstore_service,
         mainpage_service=mainpage_service,
+        search_service=search_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,
         life_story_scheduler=life_story_scheduler,
