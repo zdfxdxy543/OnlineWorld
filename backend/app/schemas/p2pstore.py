@@ -47,6 +47,9 @@ class Category(BaseModel):
     name: str = Field(..., description="Category name")
     description: Optional[str] = Field(None, description="Category description")
 
+    class Config:
+        from_attributes = True
+
 
 class CategoryListResponse(BaseModel):
     categories: List[Category] = Field(default_factory=list, description="List of categories")
