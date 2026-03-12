@@ -84,6 +84,21 @@ class Settings:
     scheduler_life_news_probability: float = _parse_probability(
         os.getenv("SCHEDULER_LIFE_NEWS_PROBABILITY"), default=0.08
     )
+    scheduler_life_arc_reveal_after_hours: float = _parse_non_negative_float(
+        os.getenv("SCHEDULER_LIFE_ARC_REVEAL_AFTER_HOURS"), default=1.0
+    )
+    scheduler_life_arc_news_resolution_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_LIFE_ARC_NEWS_RESOLUTION_PROBABILITY"), default=0.35
+    )
+    scheduler_detective_arc_reveal_after_hours: float = _parse_non_negative_float(
+        os.getenv("SCHEDULER_DETECTIVE_ARC_REVEAL_AFTER_HOURS"), default=1.0
+    )
+    scheduler_detective_arc_news_resolution_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_DETECTIVE_ARC_NEWS_RESOLUTION_PROBABILITY"), default=0.55
+    )
+    scheduler_detective_arc_netdisk_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_DETECTIVE_ARC_NETDISK_PROBABILITY"), default=0.65
+    )
     cors_origins: tuple[str, ...] = _parse_origins(os.getenv("CORS_ORIGINS"))
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from itertools import count
+import re
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -81,6 +82,61 @@ def _resolve_actor_ids(payload: SchedulerRunRequest, request: Request) -> tuple[
         )
 
     return actor_ids, spawned_actor
+
+
+def _extract_arc_info(story_id: str) -> tuple[str | None, str | None]:
+    match = re.search(r"(?:life|detective)-arc-(arc-\d+)-phase-([a-z]+)-", story_id)
+    if not match:
+        return None, None
+    return match.group(1), match.group(2)
+
+
+def _persist_arc_progress(report, request: Request) -> None:
+    arc_id, phase = _extract_arc_info(report.story_id)
+    if not arc_id:
+        return
+
+    clue_thread_id = None
+    resolution_thread_id = None
+    resolution_news_id = None
+    related_share_id = None
+
+    for item in report.results:
+        if item.status != "success":
+            continue
+        if item.capability == "forum.create_thread":
+            thread_id = str(item.output.get("thread_id", "")).strip()
+            if not thread_id:
+                thread = item.output.get("thread", {})
+                if isinstance(thread, dict):
+                    thread_id = str(thread.get("id", "")).strip()
+            if thread_id:
+                if phase == "resolution":
+                    resolution_thread_id = thread_id
+                else:
+                    clue_thread_id = thread_id
+        if item.capability == "news.publish_article":
+            article_id = str(item.output.get("article_id", "")).strip()
+            if not article_id:
+                article = item.output.get("article", {})
+                if isinstance(article, dict):
+                    article_id = str(article.get("article_id", "")).strip()
+            if article_id:
+                resolution_news_id = article_id
+        if item.capability == "netdisk.create_share_link":
+            share_id = str(item.output.get("share_id", "")).strip()
+            if share_id:
+                related_share_id = share_id
+
+    resolve = phase == "resolution" and (bool(resolution_news_id) or bool(resolution_thread_id))
+    request.app.state.container.story_arc_service.mark_progress(
+        arc_id=arc_id,
+        clue_thread_id=clue_thread_id,
+        related_share_id=related_share_id,
+        resolution_thread_id=resolution_thread_id,
+        resolution_news_id=resolution_news_id,
+        resolve=resolve,
+    )
 
 
 @router.get("/capabilities", response_model=list[CapabilitySpecResponse])
@@ -176,6 +232,46 @@ def run_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRu
 def run_life_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRunResponse:
     actor_ids, spawned_actor = _resolve_actor_ids(payload, request)
     report = request.app.state.container.life_story_scheduler.run(goal=payload.goal, actors=actor_ids)
+    return SchedulerRunResponse(
+        story_id=report.story_id,
+        goal=report.goal,
+        status=report.status,
+        results=[_map_action_result(item) for item in report.results],
+        pending_steps=report.pending_steps,
+        planner_name=report.planner_name,
+        planner_source=report.planner_source,
+        fallback_used=report.fallback_used,
+        planner_detail=report.planner_detail,
+        spawned_actor_id=spawned_actor.agent_id if spawned_actor else None,
+        spawn_triggered=spawned_actor is not None,
+    )
+
+
+@router.post("/scheduler/run-life-arc", response_model=SchedulerRunResponse)
+def run_life_arc_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRunResponse:
+    actor_ids, spawned_actor = _resolve_actor_ids(payload, request)
+    report = request.app.state.container.life_arc_story_scheduler.run(goal=payload.goal, actors=actor_ids)
+    _persist_arc_progress(report, request)
+    return SchedulerRunResponse(
+        story_id=report.story_id,
+        goal=report.goal,
+        status=report.status,
+        results=[_map_action_result(item) for item in report.results],
+        pending_steps=report.pending_steps,
+        planner_name=report.planner_name,
+        planner_source=report.planner_source,
+        fallback_used=report.fallback_used,
+        planner_detail=report.planner_detail,
+        spawned_actor_id=spawned_actor.agent_id if spawned_actor else None,
+        spawn_triggered=spawned_actor is not None,
+    )
+
+
+@router.post("/scheduler/run-detective-arc", response_model=SchedulerRunResponse)
+def run_detective_arc_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRunResponse:
+    actor_ids, spawned_actor = _resolve_actor_ids(payload, request)
+    report = request.app.state.container.detective_arc_story_scheduler.run(goal=payload.goal, actors=actor_ids)
+    _persist_arc_progress(report, request)
     return SchedulerRunResponse(
         story_id=report.story_id,
         goal=report.goal,

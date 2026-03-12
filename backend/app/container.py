@@ -22,9 +22,16 @@ from app.services.forum_service import ForumService
 from app.services.generation_service import GenerationService
 from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
+from app.services.story_arc_service import StoryArcService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
-from app.simulation.planner import AbstractStoryPlanner, LifeEventStoryPlanner, RuleBasedStoryPlanner
+from app.simulation.planner import (
+    AbstractStoryPlanner,
+    LifeEventStoryPlanner,
+    OngoingDetectiveArcPlanner,
+    OngoingLifeArcPlanner,
+    RuleBasedStoryPlanner,
+)
 from app.simulation.scheduler import StoryScheduler
 from app.simulation.tool_registry import ToolRegistry
 from app.simulation.tools.forum_pipeline import ForumPipelineToolExecutor
@@ -37,12 +44,15 @@ class ServiceContainer:
     settings: Settings
     database_session_manager: DatabaseSessionManager
     world_service: WorldService
+    story_arc_service: StoryArcService
     forum_service: ForumService
     netdisk_service: NetdiskService
     news_service: NewsService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
     life_story_scheduler: StoryScheduler
+    life_arc_story_scheduler: StoryScheduler
+    detective_arc_story_scheduler: StoryScheduler
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -70,6 +80,8 @@ def build_container(settings: Settings) -> ServiceContainer:
     )
     generation_service = GenerationService(llm_client, consistency_checker)
     world_service = WorldService(world_repository, simulation_engine, generation_service)
+    story_arc_service = StoryArcService(database_session_manager)
+    story_arc_service.initialize()
     forum_service = ForumService(forum_repository)
     netdisk_repository = SQLiteNetdiskRepository(database_session_manager)
     netdisk_repository.initialize()
@@ -126,14 +138,44 @@ def build_container(settings: Settings) -> ServiceContainer:
         publication_delay_max_seconds=settings.scheduler_publication_delay_max_seconds,
     )
 
+    life_arc_planner: AbstractStoryPlanner = OngoingLifeArcPlanner(
+        story_arc_service=story_arc_service,
+        reveal_after_hours=settings.scheduler_life_arc_reveal_after_hours,
+        news_resolution_probability=settings.scheduler_life_arc_news_resolution_probability,
+    )
+    life_arc_story_scheduler = StoryScheduler(
+        planner=life_arc_planner,
+        tool_registry=tool_registry,
+        publication_delay_probability=settings.scheduler_publication_delay_probability,
+        publication_delay_min_seconds=settings.scheduler_publication_delay_min_seconds,
+        publication_delay_max_seconds=settings.scheduler_publication_delay_max_seconds,
+    )
+
+    detective_arc_planner: AbstractStoryPlanner = OngoingDetectiveArcPlanner(
+        story_arc_service=story_arc_service,
+        reveal_after_hours=settings.scheduler_detective_arc_reveal_after_hours,
+        resolution_news_probability=settings.scheduler_detective_arc_news_resolution_probability,
+        netdisk_probability=settings.scheduler_detective_arc_netdisk_probability,
+    )
+    detective_arc_story_scheduler = StoryScheduler(
+        planner=detective_arc_planner,
+        tool_registry=tool_registry,
+        publication_delay_probability=settings.scheduler_publication_delay_probability,
+        publication_delay_min_seconds=settings.scheduler_publication_delay_min_seconds,
+        publication_delay_max_seconds=settings.scheduler_publication_delay_max_seconds,
+    )
+
     return ServiceContainer(
         settings=settings,
         database_session_manager=database_session_manager,
         world_service=world_service,
+        story_arc_service=story_arc_service,
         forum_service=forum_service,
         netdisk_service=netdisk_service,
         news_service=news_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,
         life_story_scheduler=life_story_scheduler,
+        life_arc_story_scheduler=life_arc_story_scheduler,
+        detective_arc_story_scheduler=detective_arc_story_scheduler,
     )
