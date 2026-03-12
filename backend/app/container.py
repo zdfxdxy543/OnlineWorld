@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.consistency.checker import ConsistencyChecker
 from app.core.config import Settings
 from app.infrastructure.db.forum_repository import SQLiteForumRepository
+from app.infrastructure.db.mainpage_repository import SQLiteMainPageRepository
 from app.infrastructure.db.netdisk_repository import SQLiteNetdiskRepository
 from app.infrastructure.db.news_repository import SQLiteNewsRepository
 from app.infrastructure.db.session import DatabaseSessionManager
@@ -20,6 +21,7 @@ from app.repositories.forum_repository import AbstractForumRepository
 from app.repositories.news_repository import AbstractNewsRepository
 from app.services.forum_service import ForumService
 from app.services.generation_service import GenerationService
+from app.services.mainpage_service import MainPageService
 from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
 from app.services.story_arc_service import StoryArcService
@@ -35,6 +37,7 @@ from app.simulation.planner import (
 from app.simulation.scheduler import StoryScheduler
 from app.simulation.tool_registry import ToolRegistry
 from app.simulation.tools.forum_pipeline import ForumPipelineToolExecutor
+from app.simulation.tools.mainpage_pipeline import MainPagePipelineToolExecutor
 from app.simulation.tools.netdisk_pipeline import NetdiskPipelineToolExecutor
 from app.simulation.tools.news_pipeline import NewsPipelineToolExecutor
 
@@ -48,6 +51,7 @@ class ServiceContainer:
     forum_service: ForumService
     netdisk_service: NetdiskService
     news_service: NewsService
+    mainpage_service: MainPageService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
     life_story_scheduler: StoryScheduler
@@ -89,12 +93,17 @@ def build_container(settings: Settings) -> ServiceContainer:
     news_repository: AbstractNewsRepository = SQLiteNewsRepository(database_session_manager)
     news_repository.initialize()
     news_service = NewsService(news_repository)
+    mainpage_repository = SQLiteMainPageRepository(database_session_manager)
+    mainpage_repository.initialize()
+    mainpage_service = MainPageService(mainpage_repository)
 
     content_generator: AbstractStructuredContentGenerator = SiliconFlowStructuredContentGenerator(
         api_key=settings.siliconflow_api_key,
         model_name=settings.llm_model,
         base_url=settings.siliconflow_base_url,
         max_attempts=3,
+        request_timeout_seconds=settings.siliconflow_content_timeout_seconds,
+        retry_backoff_seconds=settings.siliconflow_content_retry_backoff_seconds,
     )
 
     tool_registry = ToolRegistry(
@@ -108,6 +117,7 @@ def build_container(settings: Settings) -> ServiceContainer:
                 forum_service,
                 netdisk_service,
             ),
+            MainPagePipelineToolExecutor(mainpage_service, consistency_checker, content_generator),
         ]
     )
 
@@ -173,6 +183,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         forum_service=forum_service,
         netdisk_service=netdisk_service,
         news_service=news_service,
+        mainpage_service=mainpage_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,
         life_story_scheduler=life_story_scheduler,

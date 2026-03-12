@@ -67,6 +67,11 @@ const router = createRouter({
       ],
     },
     {
+      path: '/main/:slug',
+      name: 'main-generated-page',
+      component: () => import('../mainpage/views/MainGeneratedPageView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('../forum/views/NotFoundView.vue'),

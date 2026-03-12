@@ -16,6 +16,8 @@ from app.simulation.tool_registry import ToolRegistry
 class StoryScheduler:
     _REFERENCE_KEY_ALIASES: dict[str, tuple[str, ...]] = {
         "file_id": ("share_id", "resource_id"),
+        "page_slug": ("slug",),
+        "webpage_slug": ("slug",),
     }
 
     def __init__(

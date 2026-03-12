@@ -150,6 +150,8 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
             "Example: use '$step_1.output.threads[0].id' or '$step_2.output.thread_id' instead of invented placeholders. "
             "For publishable text fields such as title/content, always use English text. "
             "For any publishable text such as title/content, write the final in-world forum text directly. "
+            "If the goal implies website/page generation and main.generate_page is available, include a main.generate_page step. "
+            "When main.read_page is available and a page was generated, include a readback step that references '$<generate_step>.output.slug'. "
             "Do not include prompt language like '生成一个', '请生成', '你是', '输出JSON', or any meta instructions in the content fields."
         )
 
@@ -384,6 +386,50 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
 
         has_outcome_news = any(item.capability == "news.publish_article" for item in chain_steps)
         outcome_thread_count = sum(1 for item in chain_steps if item.capability == "forum.create_thread")
+        generated_page_steps = [item for item in chain_steps if item.capability == "main.generate_page"]
+        has_read_page_step = any(item.capability == "main.read_page" for item in chain_steps)
+
+        web_goal = self._goal_implies_webpage(goal)
+        if web_goal and not generated_page_steps and "main.generate_page" in capabilities:
+            depends = []
+            if chain_steps:
+                depends = [chain_steps[-1].step_id]
+            generated_page_steps.append(
+                append_step(
+                    capability="main.generate_page",
+                    actor_id=actor_for(0),
+                    payload={
+                        "title": "Official Case Update Page",
+                        "description": "Publish a concise investigation landing page for public reading.",
+                        "slug": "case-update",
+                        "style": "investigation_portal",
+                    },
+                    depends_on=depends,
+                    rationale="Outcome phase: generate a dedicated webpage for public-facing story context.",
+                )
+            )
+
+        if generated_page_steps and "main.read_page" in capabilities and not has_read_page_step:
+            page_step = generated_page_steps[-1]
+            append_step(
+                capability="main.read_page",
+                actor_id=actor_for(1),
+                payload={
+                    "slug": f"${page_step.step_id}.output.slug",
+                },
+                depends_on=[page_step.step_id],
+                rationale="Readback phase: verify the published webpage is retrievable when later steps need it.",
+            )
+
+        if generated_page_steps:
+            page_step = generated_page_steps[-1]
+            slug_ref = f"${page_step.step_id}.output.slug"
+            for step in chain_steps:
+                if step.capability != "main.read_page":
+                    continue
+                step.payload["slug"] = slug_ref
+                if page_step.step_id not in step.depends_on:
+                    step.depends_on.append(page_step.step_id)
 
         if not has_outcome_news and "news.publish_article" in capabilities and thread_step is not None:
             depends = [thread_step.step_id] + [item.step_id for item in reply_steps]
@@ -426,3 +472,27 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
             )
 
         return chain_steps
+
+    @staticmethod
+    def _goal_implies_webpage(goal: str) -> bool:
+        normalized = goal.strip().lower()
+        if not normalized:
+            return False
+        keywords = (
+            "web",
+            "website",
+            "webpage",
+            "home page",
+            "homepage",
+            "landing page",
+            "company page",
+            "profile page",
+            "门户",
+            "网页",
+            "页面",
+            "官网",
+            "主页",
+            "公司页",
+            "个人页",
+        )
+        return any(token in normalized for token in keywords)

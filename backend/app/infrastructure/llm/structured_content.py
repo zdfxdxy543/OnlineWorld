@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import hashlib
 import json
+import socket
+import time
 from urllib import error, request
 
 from app.infrastructure.llm.json_content import parse_json_content
@@ -99,6 +101,30 @@ class MockStructuredContentGenerator(AbstractStructuredContentGenerator):
                 fields={"content": body[:4000]},
                 source="mock_local",
                 raw_response=body,
+                metadata={"generator": "MockStructuredContentGenerator"},
+            )
+
+        if capability == "main.generate_page":
+            title_seed = str(fact_context.get("requested_title", "Generated Page")).strip() or "Generated Page"
+            description_seed = str(fact_context.get("requested_description", "")).strip() or "A generated page"
+            slug_seed = str(fact_context.get("slug", "generated-page")).strip() or "generated-page"
+            html = (
+                "<!doctype html><html><head><meta charset=\"utf-8\" />"
+                f"<title>{title_seed}</title>"
+                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />"
+                "<style>body{font-family:Georgia,serif;margin:0;background:#f5f1e8;color:#1d2a33;}"
+                ".wrap{max-width:880px;margin:0 auto;padding:36px 24px;}"
+                "h1{margin:0 0 12px;font-size:40px;}"
+                "p{line-height:1.7;font-size:17px;}"
+                ".chip{display:inline-block;margin-top:18px;padding:6px 10px;border:1px solid #1d2a33;border-radius:999px;font-size:13px;}"
+                "</style></head><body><main class=\"wrap\">"
+                f"<h1>{title_seed}</h1><p>{description_seed}</p><span class=\"chip\">/main/{slug_seed}</span>"
+                "</main></body></html>"
+            )
+            return GeneratedContent(
+                fields={"title": title_seed[:120], "html_content": html[:120000], "assets": []},
+                source="mock_local",
+                raw_response=html,
                 metadata={"generator": "MockStructuredContentGenerator"},
             )
 
@@ -202,21 +228,29 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
         model_name: str,
         base_url: str,
         max_attempts: int = 3,
+        request_timeout_seconds: float = 45.0,
+        retry_backoff_seconds: float = 1.0,
     ) -> None:
         self.api_key = api_key
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
         self.max_attempts = max(1, max_attempts)
+        self.request_timeout_seconds = max(1.0, request_timeout_seconds)
+        self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
 
     def generate(self, generation_request: ContentGenerationRequest) -> GeneratedContent:
         payload = self._build_payload(generation_request)
         last_error = "unknown error"
-        for _attempt in range(1, self.max_attempts + 1):
+        for attempt in range(1, self.max_attempts + 1):
             generated, error_reason = self._call_model(payload)
             if generated is not None:
                 generated.source = f"remote_llm:{self.model_name}"
                 return generated
             last_error = error_reason or "invalid or empty generation response"
+
+            # Backoff between failed attempts to reduce burst failures on remote timeout/rate limit.
+            if attempt < self.max_attempts and self.retry_backoff_seconds > 0:
+                time.sleep(self.retry_backoff_seconds * (2 ** (attempt - 1)))
 
         raise RuntimeError(
             f"SiliconFlow content generation failed after {self.max_attempts} attempts: {last_error}"
@@ -342,6 +376,41 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
         return system, user
 
     @staticmethod
+    def _prompt_main_generate_page(generation_request: ContentGenerationRequest) -> tuple[str, str]:
+        ctx = generation_request.fact_context
+        requested_title = str(ctx.get("requested_title", "Generated Page")).strip()
+        requested_description = str(ctx.get("requested_description", "")).strip()
+        requested_style = str(ctx.get("requested_style", "world_website")).strip()
+        slug = str(ctx.get("slug", "generated-page")).strip()
+        era = str(generation_request.style_context.get("era", "early_2000s_web")).strip()
+
+        system = (
+            "You are a senior web creator for an in-world internet simulation. "
+            "Create one complete and publishable HTML page. "
+            "The page must feel like a real website from around the year 2000 to 2005, not a modern landing page. "
+            "Prefer table-based or simple block layouts, banner headers, visible navigation, dense sidebars, beveled buttons, tiled backgrounds, small badges, marquees or counters only when tasteful, and typography/colors typical of that era. "
+            "No markdown, no explanation, no chain-of-thought. "
+            "Do not include script tags or inline event handlers. "
+            'Return a JSON object with exactly these keys: "title", "html_content", "assets".'
+        )
+        user = (
+            f"Target URL: /main/{slug}\n"
+            f"Page theme title: {requested_title}\n"
+            f"Page description: {requested_description}\n"
+            f"Visual style keyword: {requested_style}\n\n"
+            f"Required era style: {era}\n\n"
+            "Requirements:\n"
+            "- html_content must be a full HTML document including <!doctype html>, <html>, <head>, and <body>.\n"
+            "- Language should follow the page description context.\n"
+            "- Keep page content coherent and grounded in the simulation world.\n"
+            "- Visually it should read as a page from the early 2000s web: compact layout, obvious navigation, old-web decorative styling, and avoid modern minimalist SaaS aesthetics.\n"
+            "- assets can be an empty list or a list of objects: {path, content, content_type}.\n"
+            "- No <script> tags. No javascript: URLs.\n"
+            '- Return JSON: {"title":"...","html_content":"<!doctype html>...","assets":[...]}'
+        )
+        return system, user
+
+    @staticmethod
     def _prompt_generic(generation_request: ContentGenerationRequest) -> tuple[str, str]:
         desired = ", ".join(f'"{f}"' for f in generation_request.desired_fields)
         ctx_summary = json.dumps(generation_request.fact_context, ensure_ascii=False)
@@ -366,6 +435,8 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
             system_prompt, user_prompt_text = self._prompt_forum_create_thread(generation_request)
         elif capability == "news.publish_article":
             system_prompt, user_prompt_text = self._prompt_news_publish_article(generation_request)
+        elif capability == "main.generate_page":
+            system_prompt, user_prompt_text = self._prompt_main_generate_page(generation_request)
         else:
             system_prompt, user_prompt_text = self._prompt_generic(generation_request)
 
@@ -393,10 +464,10 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
         )
 
         try:
-            with request.urlopen(http_request, timeout=45) as response:
+            with request.urlopen(http_request, timeout=self.request_timeout_seconds) as response:
                 response_text = response.read().decode("utf-8")
         except TimeoutError:
-            return None, "timeout"
+            return None, f"timeout: request exceeded {self.request_timeout_seconds:.1f}s"
         except error.HTTPError as exc:
             try:
                 body_preview = exc.read().decode("utf-8", errors="replace")[:400]
@@ -404,7 +475,12 @@ class SiliconFlowStructuredContentGenerator(AbstractStructuredContentGenerator):
                 body_preview = "<unavailable>"
             return None, f"http {exc.code}: {body_preview}"
         except error.URLError as exc:
-            return None, f"url_error: {exc.reason}"
+            reason = str(exc.reason)
+            if isinstance(exc.reason, TimeoutError) or isinstance(exc.reason, socket.timeout):
+                return None, f"timeout: urlopen timed out after {self.request_timeout_seconds:.1f}s"
+            if "timed out" in reason.lower():
+                return None, f"timeout: {reason}"
+            return None, f"url_error: {reason}"
 
         try:
             data = json.loads(response_text)

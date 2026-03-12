@@ -62,6 +62,12 @@ class Settings:
     siliconflow_api_key: str = os.getenv("SILICONFLOW_API_KEY", "sk-vxnqqulpbrduxkhpxmsfebvhyvwdxjebofqcjtdsjrggebvv")
     siliconflow_base_url: str = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
     siliconflow_planner_model: str = os.getenv("SILICONFLOW_PLANNER_MODEL", "Pro/deepseek-ai/DeepSeek-V3.2")
+    siliconflow_content_timeout_seconds: float = _parse_non_negative_float(
+        os.getenv("SILICONFLOW_CONTENT_TIMEOUT_SECONDS"), default=90.0
+    )
+    siliconflow_content_retry_backoff_seconds: float = _parse_non_negative_float(
+        os.getenv("SILICONFLOW_CONTENT_RETRY_BACKOFF_SECONDS"), default=1.5
+    )
     netdisk_storage_dir: str = os.getenv("NETDISK_STORAGE_DIR", DEFAULT_NETDISK_STORAGE_DIR)
     scheduler_new_actor_probability: float = _parse_probability(
         os.getenv("SCHEDULER_NEW_ACTOR_PROBABILITY"), default=0.30

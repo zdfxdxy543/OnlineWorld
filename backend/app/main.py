@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from app.api.router import api_router
 from app.container import build_container
@@ -28,6 +29,13 @@ def create_app() -> FastAPI:
             "docs": "/docs",
             "health": f"{settings.api_prefix}/health",
         }
+
+    @app.get("/main/{slug}", response_class=HTMLResponse)
+    def read_generated_main_page(slug: str) -> HTMLResponse:
+        page = app.state.container.mainpage_service.get_page_by_slug(slug=slug)
+        if page is None:
+            return HTMLResponse(status_code=404, content="<h1>404</h1><p>Page not found.</p>")
+        return HTMLResponse(content=page.html_content)
 
     return app
 
