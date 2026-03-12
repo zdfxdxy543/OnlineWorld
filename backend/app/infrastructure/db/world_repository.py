@@ -85,10 +85,8 @@ class SQLiteWorldRepository(AbstractWorldRepository):
             next_id = int(row["max_id"]) + 1
             self._resource_counter = count(next_id)
 
-            npc_row = conn.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(agent_id, 5) AS INTEGER)), 0) AS max_id FROM agents WHERE agent_id LIKE 'npc-%'"
-            ).fetchone()
-            self._agent_counter = count(int(npc_row["max_id"]) + 1)
+            agent_row = conn.execute("SELECT COUNT(1) AS total FROM agents").fetchone()
+            self._agent_counter = count(int(agent_row["total"]) + 1)
             conn.commit()
 
     def get_world_snapshot(self) -> WorldSnapshot:
@@ -224,22 +222,20 @@ class SQLiteWorldRepository(AbstractWorldRepository):
         )
 
     def create_random_agent(self) -> AgentSummary:
-        adjectives = ["Silent", "Amber", "North", "Grey", "Neon", "Paper"]
-        nouns = ["Courier", "Lantern", "Thread", "Switch", "Relay", "Watcher"]
         occupations = ["夜班保安", "网络维护员", "物流分拣员", "便利店店长", "旧货修复师", "出租车司机"]
         cities = ["Linhai", "Beicheng", "Yunzhou", "Haidong", "Nanshan"]
         age_ranges = ["18-24", "25-34", "35-44"]
         genders = ["female", "male", "non-binary"]
 
-        agent_id = f"npc-{next(self._agent_counter):04d}"
-        display_name = f"{random.choice(adjectives)}_{random.choice(nouns)}_{agent_id[-2:]}"
+        gender = random.choice(genders)
+        agent_id, display_name = self._generate_human_identity(gender=gender)
         status = random.choice(["Online", "Away", "Busy"])
         occupation = random.choice(occupations)
         residence_city = random.choice(cities)
-        gender = random.choice(genders)
         age_range = random.choice(age_ranges)
         native_language = random.choice(["zh-CN", "en-US"])
-        bio = f"{display_name} works as {occupation} in {residence_city} and often monitors rumor signals."
+        bio = f"{display_name} works as {occupation} in {residence_city} and often monitors local rumor signals."
+        site_username = self._generate_site_username()
         now = datetime.now(timezone.utc).isoformat()
 
         personality_traits = random.sample(["curious", "cautious", "blunt", "empathetic", "meticulous"], k=2)
@@ -261,6 +257,7 @@ class SQLiteWorldRepository(AbstractWorldRepository):
                 personality_traits=personality_traits,
                 values=values,
                 hobbies=hobbies,
+                site_username=site_username,
                 now_iso=now,
                 source="scheduler_random_spawn",
             )
@@ -279,6 +276,47 @@ class SQLiteWorldRepository(AbstractWorldRepository):
             values_json=json.dumps(values, ensure_ascii=True),
             hobbies_json=json.dumps(hobbies, ensure_ascii=True),
         )
+
+    def _generate_human_identity(self, *, gender: str) -> tuple[str, str]:
+        female_first_names = ["Aria", "Eve", "Nora", "Selene", "Mia", "Lina", "Zoe", "Iris"]
+        male_first_names = ["Kai", "Milo", "Noah", "Ethan", "Leo", "Evan", "Ryan", "Adam"]
+        neutral_first_names = ["Alex", "River", "Sky", "Sage", "Robin", "Casey", "Jamie", "Avery"]
+        last_names = ["Chen", "Lin", "Zhao", "Wang", "Liu", "Kim", "Park", "Morris", "Reed", "Clark"]
+
+        if gender == "female":
+            first_pool = female_first_names
+        elif gender == "male":
+            first_pool = male_first_names
+        else:
+            first_pool = neutral_first_names
+
+        with self.session_manager.connect() as conn:
+            for _ in range(30):
+                first = random.choice(first_pool)
+                last = random.choice(last_names)
+                display_name = f"{first} {last}"
+                base_id = first.lower()
+                candidate_id = base_id
+                if self._agent_id_exists(conn, candidate_id):
+                    candidate_id = f"{base_id}{next(self._agent_counter):03d}"
+                if not self._agent_id_exists(conn, candidate_id):
+                    return candidate_id, display_name
+
+            fallback_first = random.choice(first_pool)
+            fallback_last = random.choice(last_names)
+            return f"resident{next(self._agent_counter):04d}", f"{fallback_first} {fallback_last}"
+
+    @staticmethod
+    def _agent_id_exists(conn, agent_id: str) -> bool:
+        row = conn.execute("SELECT 1 AS exists_flag FROM agents WHERE agent_id = ?", (agent_id,)).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _generate_site_username() -> str:
+        adjectives = ["silent", "amber", "north", "grey", "neon", "paper"]
+        nouns = ["courier", "lantern", "thread", "switch", "relay", "watcher"]
+        suffix = random.randint(10, 99)
+        return f"{random.choice(adjectives)}_{random.choice(nouns)}_{suffix}"
 
     def _migrate_forum_users_to_agents(self, conn) -> None:
         count_row = conn.execute("SELECT COUNT(1) AS count FROM agents").fetchone()
@@ -397,6 +435,7 @@ class SQLiteWorldRepository(AbstractWorldRepository):
         personality_traits: list[str],
         values: list[str],
         hobbies: list[str],
+        site_username: str | None = None,
         now_iso: str,
         source: str,
     ) -> None:
@@ -467,10 +506,10 @@ class SQLiteWorldRepository(AbstractWorldRepository):
                 agent_id,
                 "forum",
                 agent_id,
-                display_name,
+                site_username or display_name,
                 "active",
                 50,
-                json.dumps({"source": source}, ensure_ascii=True),
+                json.dumps({"source": source, "gender": gender}, ensure_ascii=True),
             ),
         )
 

@@ -132,10 +132,10 @@
 - 完整 AI 社会核心数据模型
 - 多网站内容模型的正式落库
 - 长周期世界状态管理
-- 正式事件调度器与任务队列
+- 任务队列与异步执行基础设施
 - 完整故事链引擎
 - 深度一致性校验器
-- 侦探事件生成器
+- 大规模自动化测试与观测平台
 - 前后端联调页面与真实业务流程
 
 ## 5. 已完成的产品共识
@@ -358,10 +358,10 @@
 
 - **产品方向：** 已初步明确
 - **架构设计：** 已有交接文档和后端骨架级设计，仍需正式系统架构文档
-- **后端实现：** 已具备 SQL 驱动的论坛读写 API、SQL 驱动的 actor/world 仓储、AI 方法调用 API、工具注册中心、第一版可扩展调度器，以及“调度 -> 事实执行 -> 内容生成 -> 一致性校验 -> 发布”的通用五步骤写链
+- **后端实现：** 已具备 SQL 驱动的论坛/网盘/新闻能力、AI 方法调用 API、工具注册中心、可扩展调度器族（主调度、生活调度、生活长期链、悬疑长期链）以及“调度 -> 事实执行 -> 内容生成 -> 一致性校验 -> 发布”的通用五步骤写链
 - **前端实现：** 已改为论坛站点并切换为后端 API 拉取模式
-- **AI 叙事引擎：** 已有规则规划器与 `SiliconFlow` 规划器适配入口，支持 capability 约束、跨步骤引用解析、论坛文本清洗，以及结构化内容生成器的论坛首个接入
-- **侦探事件系统：** 未实现
+- **AI 叙事引擎：** 已有规则规划器与 `SiliconFlow` 规划器适配入口，支持 capability 约束、跨步骤引用解析、自动补链、发布延迟与结构化内容生成
+- **侦探事件系统：** 已有可运行 MVP（普通悬疑 + 长期悬疑 + 长期续写），仍需增强复杂推理与可视化观测
 
 ## 13. 下一步（最近优先级）
 
@@ -506,3 +506,42 @@
 	1. 为网盘访问流补测试：错误凭证、过期凭证、成功读取、成功下载。
 	2. 评估是否将文件列表接口改为仅内部/管理用途。
 	3. 将同类“凭证保护读”模式推广到后续商店附件、私信附件站点。
+
+### 2026-03-12
+
+- 完成：
+	1. 修复新闻前端数据契约问题：`newsApi.js` 统一解包后端响应对象（`articles/categories`），避免列表页把对象当数组导致页面不显示新增文章。
+	2. 修复网盘“文件ID语义”不一致：读取/下载接口支持优先按 `share_id` 解析并兼容 `resource_id`，前端文案与参数语义同步到 `share_id`。
+	3. 新增生活事件调度入口：`POST /api/v1/ai/scheduler/run-life`（论坛为主，网盘/新闻低概率触发）。
+	4. 新增长期故事链持久化：`story_arcs` 表 + `StoryArcService`，支持 `open/resolved` 状态、揭晓时间、推进计数与线索/结果对象引用。
+	5. 新增长期生活链入口：`POST /api/v1/ai/scheduler/run-life-arc`，实现跨多次调度“先铺垫后揭晓”。
+	6. 新增长期悬疑链入口：`POST /api/v1/ai/scheduler/run-detective-arc`，支持线索帖、多角色调查回帖、结果发布（新闻或结案帖）。
+	7. 新增概率调度脚本：
+		- `backend/scripts/run_probabilistic_scheduler.py`（生活向）
+		- `backend/scripts/run_probabilistic_detective_scheduler.py`（悬疑向）
+	8. 概率调度脚本已内置汇总：动作分布、成功失败、capability 频次、open arcs 变化。
+
+- 修改文件（本轮关键）：
+	- `backend/app/services/story_arc_service.py`
+	- `backend/app/simulation/planner.py`
+	- `backend/app/api/v1/endpoints/ai.py`
+	- `backend/app/container.py`
+	- `backend/app/core/config.py`
+	- `backend/scripts/run_probabilistic_scheduler.py`
+	- `backend/scripts/run_probabilistic_detective_scheduler.py`
+	- `frontend/src/news/api/newsApi.js`
+
+- 新决策：
+	1. 长期故事链必须持久化，不能只靠内存状态，否则无法支撑“每小时一轮”的跨会话推进。
+	2. 悬疑链与生活链分离为不同调度入口，避免同一规划器目标漂移。
+	3. 概率调度器作为运营层入口，负责“开新线/续旧线”流量分配，不承担业务事实写入。
+
+- 遗留问题：
+	1. `story_arcs` 目前只做轻量状态管理，缺少独立审计表（每轮决策、命中策略、失败原因）。
+	2. 缺少统一运营可视化接口（如 open arcs 列表、按状态筛选、强制结案）。
+	3. 调度命令行的端到端自动测试尚未补全。
+
+- 下一步：
+	1. 增加 `story_arcs` 的查询/人工干预 API（open 列表、resolve/abandon）。
+	2. 为概率调度脚本增加 `--summary-json` 输出，接入定时任务与报表。
+	3. 增加“侦探链连续 24 轮”回归测试，重点验证跨轮 thread 续写与按时揭晓。
