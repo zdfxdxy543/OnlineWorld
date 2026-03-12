@@ -1,9 +1,11 @@
 ﻿<script setup>
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { getFileContent, getFileDownloadUrl } from '../api/netdiskApi'
 
+const route = useRoute()
 const form = ref({
-  resourceId: '',
+  fileId: String(route.query.share || '').trim(),
   accessCode: '',
 })
 
@@ -15,17 +17,17 @@ async function handleOpenFile() {
   error.value = ''
   openedFile.value = null
 
-  const resourceId = form.value.resourceId.trim()
+  const fileId = form.value.fileId.trim()
   const accessCode = form.value.accessCode.trim()
 
-  if (!resourceId || !accessCode) {
+  if (!fileId || !accessCode) {
     error.value = '请输入文件ID和访问密码。'
     return
   }
 
   loading.value = true
   try {
-    openedFile.value = await getFileContent(resourceId, accessCode)
+    openedFile.value = await getFileContent(fileId, accessCode)
   } catch (err) {
     error.value = err?.message || '文件获取失败，请检查文件ID和密码。'
   } finally {
@@ -37,9 +39,9 @@ function handleDownload() {
   if (!openedFile.value) {
     return
   }
-  const resourceId = form.value.resourceId.trim()
+  const fileId = form.value.fileId.trim()
   const accessCode = form.value.accessCode.trim()
-  window.open(getFileDownloadUrl(resourceId, accessCode), '_blank')
+  window.open(getFileDownloadUrl(fileId, accessCode), '_blank')
 }
 
 function formatSize(bytes) {
@@ -65,18 +67,18 @@ function formatDate(iso) {
   <div class="nd-access-page">
     <section class="nd-panel nd-panel--form">
       <h1 class="nd-title">文件获取</h1>
-      <p class="nd-subtitle">输入文件 ID 与访问密码后可查看并下载文件。</p>
+      <p class="nd-subtitle">输入分享文件 ID（share_id）与访问密码后可查看并下载文件。</p>
 
       <p v-if="error" class="nd-error">{{ error }}</p>
 
       <form class="nd-form" @submit.prevent="handleOpenFile">
-        <label class="nd-label" for="resource-id">文件 ID</label>
+        <label class="nd-label" for="resource-id">文件 ID（share_id）</label>
         <input
           id="resource-id"
-          v-model="form.resourceId"
+          v-model="form.fileId"
           class="nd-input"
           type="text"
-          placeholder="例如: nd-00009"
+          placeholder="例如: sh-00009"
           autocomplete="off"
           required
         />

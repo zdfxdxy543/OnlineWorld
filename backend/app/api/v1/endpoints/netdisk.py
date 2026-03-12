@@ -120,10 +120,16 @@ def get_file_content(
     access_code: str = Query(...),
 ) -> NetdiskFileContentResponse:
     service = request.app.state.container.netdisk_service
-    share = service.validate_file_access(resource_id=resource_id, access_code=access_code)
+    # Prefer share_id lookup for user-facing file IDs, then fallback to raw resource_id.
+    share = service.validate_share_reference(share_id=resource_id, access_code=access_code)
+    resolved_resource_id = share.resource_id if share is not None else resource_id
     if share is None:
-        raise HTTPException(status_code=404, detail="File not found or access code invalid")
-    item = service.get_file(resource_id=resource_id)
+        share = service.validate_file_access(resource_id=resource_id, access_code=access_code)
+        if share is None:
+            raise HTTPException(status_code=404, detail="File not found or access code invalid")
+        resolved_resource_id = share.resource_id
+
+    item = service.get_file(resource_id=resolved_resource_id)
     if item is None:
         raise HTTPException(status_code=404, detail="File not found")
     try:
@@ -147,10 +153,16 @@ def download_file(
     access_code: str = Query(...),
 ) -> PlainTextResponse:
     service = request.app.state.container.netdisk_service
-    share = service.validate_file_access(resource_id=resource_id, access_code=access_code)
+    # Prefer share_id lookup for user-facing file IDs, then fallback to raw resource_id.
+    share = service.validate_share_reference(share_id=resource_id, access_code=access_code)
+    resolved_resource_id = share.resource_id if share is not None else resource_id
     if share is None:
-        raise HTTPException(status_code=404, detail="File not found or access code invalid")
-    item = service.get_file(resource_id=resource_id)
+        share = service.validate_file_access(resource_id=resource_id, access_code=access_code)
+        if share is None:
+            raise HTTPException(status_code=404, detail="File not found or access code invalid")
+        resolved_resource_id = share.resource_id
+
+    item = service.get_file(resource_id=resolved_resource_id)
     if item is None:
         raise HTTPException(status_code=404, detail="File not found")
     try:

@@ -46,13 +46,13 @@ export function listFiles(limit = 100) {
   return request(`/netdisk/files?limit=${limit}`)
 }
 
-export function getFileContent(resourceId, accessCode) {
+export function getFileContent(fileId, accessCode) {
   const query = new URLSearchParams({ access_code: accessCode })
-  return request(`/netdisk/files/${encodeURIComponent(resourceId)}?${query.toString()}`)
+  return request(`/netdisk/files/${encodeURIComponent(fileId)}?${query.toString()}`)
 }
 
-export function getFileDownloadUrl(resourceId, accessCode) {
+export function getFileDownloadUrl(fileId, accessCode) {
   const base = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1'
   const query = new URLSearchParams({ access_code: accessCode })
-  return `${base}/netdisk/files/${encodeURIComponent(resourceId)}/download?${query.toString()}`
+  return `${base}/netdisk/files/${encodeURIComponent(fileId)}/download?${query.toString()}`
 }
