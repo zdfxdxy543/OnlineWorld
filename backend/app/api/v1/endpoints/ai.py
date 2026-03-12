@@ -46,6 +46,43 @@ def _map_action_result(item: ActionResult) -> ActionExecuteResponse:
     )
 
 
+def _resolve_actor_ids(payload: SchedulerRunRequest, request: Request) -> tuple[list[str], object]:
+    world_service = request.app.state.container.world_service
+    settings = request.app.state.container.settings
+    spawned_actor = world_service.maybe_spawn_random_agent(settings.scheduler_new_actor_probability)
+
+    actor_ids = payload.actors
+    if not actor_ids:
+        if spawned_actor is not None:
+            actor_ids = [spawned_actor.agent_id]
+        else:
+            actor_ids = [item.agent_id for item in world_service.list_agents()[:1]]
+
+    # Enrich actor pool for more realistic multi-role interactions in scheduled stories.
+    target_actor_count = max(1, settings.scheduler_target_actor_count)
+    if len(actor_ids) < target_actor_count:
+        existing = set(actor_ids)
+        for agent in world_service.list_agents():
+            if agent.agent_id in existing:
+                continue
+            actor_ids.append(agent.agent_id)
+            existing.add(agent.agent_id)
+            if len(actor_ids) >= target_actor_count:
+                break
+
+    if not actor_ids:
+        raise HTTPException(status_code=400, detail="No SQL-backed actors available")
+
+    unknown_actors = [actor_id for actor_id in actor_ids if not world_service.agent_exists(actor_id)]
+    if unknown_actors:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Actors not found in SQL agents: {', '.join(unknown_actors)}",
+        )
+
+    return actor_ids, spawned_actor
+
+
 @router.get("/capabilities", response_model=list[CapabilitySpecResponse])
 def list_capabilities(request: Request) -> list[CapabilitySpecResponse]:
     items = request.app.state.container.tool_registry.list_capabilities()
@@ -117,28 +154,28 @@ def execute_action(payload: ActionExecuteRequest, request: Request) -> ActionExe
 
 @router.post("/scheduler/run", response_model=SchedulerRunResponse)
 def run_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRunResponse:
-    world_service = request.app.state.container.world_service
-    settings = request.app.state.container.settings
-    spawned_actor = world_service.maybe_spawn_random_agent(settings.scheduler_new_actor_probability)
-
-    actor_ids = payload.actors
-    if not actor_ids:
-        if spawned_actor is not None:
-            actor_ids = [spawned_actor.agent_id]
-        else:
-            actor_ids = [item.agent_id for item in world_service.list_agents()[:1]]
-
-    if not actor_ids:
-        raise HTTPException(status_code=400, detail="No SQL-backed actors available")
-
-    unknown_actors = [actor_id for actor_id in actor_ids if not world_service.agent_exists(actor_id)]
-    if unknown_actors:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Actors not found in SQL agents: {', '.join(unknown_actors)}",
-        )
+    actor_ids, spawned_actor = _resolve_actor_ids(payload, request)
 
     report = request.app.state.container.story_scheduler.run(goal=payload.goal, actors=actor_ids)
+    return SchedulerRunResponse(
+        story_id=report.story_id,
+        goal=report.goal,
+        status=report.status,
+        results=[_map_action_result(item) for item in report.results],
+        pending_steps=report.pending_steps,
+        planner_name=report.planner_name,
+        planner_source=report.planner_source,
+        fallback_used=report.fallback_used,
+        planner_detail=report.planner_detail,
+        spawned_actor_id=spawned_actor.agent_id if spawned_actor else None,
+        spawn_triggered=spawned_actor is not None,
+    )
+
+
+@router.post("/scheduler/run-life", response_model=SchedulerRunResponse)
+def run_life_scheduler(payload: SchedulerRunRequest, request: Request) -> SchedulerRunResponse:
+    actor_ids, spawned_actor = _resolve_actor_ids(payload, request)
+    report = request.app.state.container.life_story_scheduler.run(goal=payload.goal, actors=actor_ids)
     return SchedulerRunResponse(
         story_id=report.story_id,
         goal=report.goal,

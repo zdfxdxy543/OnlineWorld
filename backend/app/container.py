@@ -24,7 +24,7 @@ from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
-from app.simulation.planner import AbstractStoryPlanner, RuleBasedStoryPlanner
+from app.simulation.planner import AbstractStoryPlanner, LifeEventStoryPlanner, RuleBasedStoryPlanner
 from app.simulation.scheduler import StoryScheduler
 from app.simulation.tool_registry import ToolRegistry
 from app.simulation.tools.forum_pipeline import ForumPipelineToolExecutor
@@ -42,6 +42,7 @@ class ServiceContainer:
     news_service: NewsService
     tool_registry: ToolRegistry
     story_scheduler: StoryScheduler
+    life_story_scheduler: StoryScheduler
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -105,7 +106,25 @@ def build_container(settings: Settings) -> ServiceContainer:
         max_attempts=3,
     )
 
-    story_scheduler = StoryScheduler(planner=planner, tool_registry=tool_registry)
+    story_scheduler = StoryScheduler(
+        planner=planner,
+        tool_registry=tool_registry,
+        publication_delay_probability=settings.scheduler_publication_delay_probability,
+        publication_delay_min_seconds=settings.scheduler_publication_delay_min_seconds,
+        publication_delay_max_seconds=settings.scheduler_publication_delay_max_seconds,
+    )
+
+    life_planner: AbstractStoryPlanner = LifeEventStoryPlanner(
+        netdisk_probability=settings.scheduler_life_netdisk_probability,
+        news_probability=settings.scheduler_life_news_probability,
+    )
+    life_story_scheduler = StoryScheduler(
+        planner=life_planner,
+        tool_registry=tool_registry,
+        publication_delay_probability=settings.scheduler_publication_delay_probability,
+        publication_delay_min_seconds=settings.scheduler_publication_delay_min_seconds,
+        publication_delay_max_seconds=settings.scheduler_publication_delay_max_seconds,
+    )
 
     return ServiceContainer(
         settings=settings,
@@ -116,4 +135,5 @@ def build_container(settings: Settings) -> ServiceContainer:
         news_service=news_service,
         tool_registry=tool_registry,
         story_scheduler=story_scheduler,
+        life_story_scheduler=life_story_scheduler,
     )

@@ -1,30 +1,46 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from itertools import count
+import random
 import re
+import time
 from typing import Any
 
 from app.domain.events import StoryEvent
 from app.simulation.planner import AbstractStoryPlanner
-from app.simulation.protocol import ActionRequest, ActionResult, SchedulerRunReport
+from app.simulation.protocol import ActionRequest, ActionResult, CapabilitySpec, SchedulerRunReport, StoryPlan, StoryStep
 from app.simulation.tool_registry import ToolRegistry
 
 
 class StoryScheduler:
     _REFERENCE_KEY_ALIASES: dict[str, tuple[str, ...]] = {
-        "file_id": ("resource_id",),
+        "file_id": ("share_id", "resource_id"),
     }
 
-    def __init__(self, planner: AbstractStoryPlanner, tool_registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        planner: AbstractStoryPlanner,
+        tool_registry: ToolRegistry,
+        *,
+        publication_delay_probability: float = 0.0,
+        publication_delay_min_seconds: float = 0.0,
+        publication_delay_max_seconds: float = 0.0,
+    ) -> None:
         self.planner = planner
         self.tool_registry = tool_registry
         self._action_counter = count(1)
+        self.publication_delay_probability = max(0.0, min(1.0, publication_delay_probability))
+        self.publication_delay_min_seconds = max(0.0, publication_delay_min_seconds)
+        self.publication_delay_max_seconds = max(self.publication_delay_min_seconds, publication_delay_max_seconds)
 
     def run(self, *, goal: str, actors: list[str]) -> SchedulerRunReport:
         allowed_actors = set(actors)
         capabilities = self.tool_registry.list_capabilities()
+        capability_map = {item.name: item for item in capabilities}
         try:
             plan = self.planner.build_story_plan(goal=goal, actors=actors, capabilities=capabilities)
+            plan = self._augment_story_plan(plan=plan, actors=actors, capability_map=capability_map)
         except Exception as error:
             failure = ActionResult(
                 action_id=f"action-{next(self._action_counter):05d}",
@@ -130,6 +146,13 @@ class StoryScheduler:
                     payload=resolved_payload,
                     idempotency_key=f"{plan.story_id}:{step.step_id}:{action_id}",
                 )
+
+                delay_seconds = self._compute_publication_delay_seconds(step.capability, capability_map)
+                scheduled_publish_at = None
+                if delay_seconds > 0:
+                    scheduled_publish_at = (datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)).isoformat()
+                    time.sleep(delay_seconds)
+
                 result = self.tool_registry.execute(request)
                 result.events.insert(
                     0,
@@ -139,6 +162,20 @@ class StoryScheduler:
                         metadata={"story_id": plan.story_id, "step_id": step.step_id},
                     ),
                 )
+                if delay_seconds > 0 and scheduled_publish_at:
+                    result.events.insert(
+                        1,
+                        StoryEvent(
+                            name="PublicationDelayApplied",
+                            detail="发布阶段已应用时间机制，内容在等待窗口后发布。",
+                            metadata={
+                                "story_id": plan.story_id,
+                                "step_id": step.step_id,
+                                "delay_seconds": f"{delay_seconds:.2f}",
+                                "scheduled_publish_at": scheduled_publish_at,
+                            },
+                        ),
+                    )
                 results.append(result)
 
                 if result.status == "success":
@@ -272,3 +309,108 @@ class StoryScheduler:
         if not isinstance(first, dict):
             return None
         return first.get(key)
+
+    def _compute_publication_delay_seconds(
+        self,
+        capability_name: str,
+        capability_map: dict[str, CapabilitySpec],
+    ) -> float:
+        capability = capability_map.get(capability_name)
+        if capability is None or capability.read_only:
+            return 0.0
+        if self.publication_delay_max_seconds <= 0:
+            return 0.0
+        if random.random() > self.publication_delay_probability:
+            return 0.0
+        if self.publication_delay_max_seconds <= self.publication_delay_min_seconds:
+            return self.publication_delay_min_seconds
+        return random.uniform(self.publication_delay_min_seconds, self.publication_delay_max_seconds)
+
+    def _augment_story_plan(
+        self,
+        *,
+        plan: StoryPlan,
+        actors: list[str],
+        capability_map: dict[str, CapabilitySpec],
+    ) -> StoryPlan:
+        if not plan.steps:
+            return plan
+
+        by_capability: dict[str, list[StoryStep]] = {}
+        for step in plan.steps:
+            by_capability.setdefault(step.capability, []).append(step)
+
+        if "forum.create_thread" not in by_capability:
+            return plan
+
+        extended_steps = list(plan.steps)
+        created_thread_step = by_capability["forum.create_thread"][0]
+        latest_step_id = extended_steps[-1].step_id
+
+        if "forum.reply_thread" in capability_map:
+            reply_actors = [actor for actor in actors if actor != created_thread_step.actor_id]
+            for actor_id in reply_actors[:2]:
+                next_step_id = self._next_step_id(extended_steps)
+                extended_steps.append(
+                    StoryStep(
+                        step_id=next_step_id,
+                        capability="forum.reply_thread",
+                        actor_id=actor_id,
+                        payload={
+                            "thread_id": f"${created_thread_step.step_id}.output.thread_id",
+                            "content": "Provide one concrete clue update and one open question for follow-up.",
+                        },
+                        depends_on=[latest_step_id],
+                        rationale="补充多角色视角，形成连续讨论链。",
+                    )
+                )
+                latest_step_id = next_step_id
+
+        if "news.publish_article" in capability_map:
+            existing_news_steps = by_capability.get("news.publish_article", [])
+            if len(existing_news_steps) < 2:
+                share_step = by_capability.get("netdisk.create_share_link", [None])[0]
+                news_actor = actors[-1] if actors else created_thread_step.actor_id
+                payload = {
+                    "title": "Follow-up: Discussion Expands Around New Evidence",
+                    "content": "Publish a follow-up that summarizes thread progress and unresolved points.",
+                    "category": "investigation",
+                    "related_thread_ids": [f"${created_thread_step.step_id}.output.thread_id"],
+                }
+                if share_step is not None:
+                    payload["related_share_ids"] = [f"${share_step.step_id}.output.share_id"]
+
+                next_step_id = self._next_step_id(extended_steps)
+                extended_steps.append(
+                    StoryStep(
+                        step_id=next_step_id,
+                        capability="news.publish_article",
+                        actor_id=news_actor,
+                        payload=payload,
+                        depends_on=[latest_step_id],
+                        rationale="增加后续新闻节点，避免故事只停留在开头。",
+                    )
+                )
+
+        if len(extended_steps) == len(plan.steps):
+            return plan
+
+        return StoryPlan(
+            story_id=plan.story_id,
+            goal=plan.goal,
+            steps=extended_steps,
+            planner_name=plan.planner_name,
+            planner_source=plan.planner_source,
+            fallback_used=plan.fallback_used,
+            planner_detail=f"{plan.planner_detail} Auto-augmented with discussion and follow-up steps.",
+        )
+
+    @staticmethod
+    def _next_step_id(steps: list[StoryStep]) -> str:
+        max_number = 0
+        for step in steps:
+            match = re.search(r"(\d+)$", step.step_id)
+            if not match:
+                continue
+            max_number = max(max_number, int(match.group(1)))
+        return f"step-{max_number + 1}"

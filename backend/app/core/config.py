@@ -30,6 +30,26 @@ def _parse_probability(value: str | None, *, default: float) -> float:
     return max(0.0, min(1.0, parsed))
 
 
+def _parse_non_negative_float(value: str | None, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        return default
+    return max(0.0, parsed)
+
+
+def _parse_positive_int(value: str | None, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return max(1, parsed)
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "OnlineWorld Backend"
@@ -45,6 +65,24 @@ class Settings:
     netdisk_storage_dir: str = os.getenv("NETDISK_STORAGE_DIR", DEFAULT_NETDISK_STORAGE_DIR)
     scheduler_new_actor_probability: float = _parse_probability(
         os.getenv("SCHEDULER_NEW_ACTOR_PROBABILITY"), default=0.30
+    )
+    scheduler_target_actor_count: int = _parse_positive_int(
+        os.getenv("SCHEDULER_TARGET_ACTOR_COUNT"), default=3
+    )
+    scheduler_publication_delay_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_PUBLICATION_DELAY_PROBABILITY"), default=0.60
+    )
+    scheduler_publication_delay_min_seconds: float = _parse_non_negative_float(
+        os.getenv("SCHEDULER_PUBLICATION_DELAY_MIN_SECONDS"), default=1.0
+    )
+    scheduler_publication_delay_max_seconds: float = _parse_non_negative_float(
+        os.getenv("SCHEDULER_PUBLICATION_DELAY_MAX_SECONDS"), default=5.0
+    )
+    scheduler_life_netdisk_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_LIFE_NETDISK_PROBABILITY"), default=0.15
+    )
+    scheduler_life_news_probability: float = _parse_probability(
+        os.getenv("SCHEDULER_LIFE_NEWS_PROBABILITY"), default=0.08
     )
     cors_origins: tuple[str, ...] = _parse_origins(os.getenv("CORS_ORIGINS"))
 
