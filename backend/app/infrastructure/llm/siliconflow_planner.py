@@ -185,7 +185,7 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
         )
 
         try:
-            with request.urlopen(http_request, timeout=30) as response:
+            with request.urlopen(http_request, timeout=60) as response:
                 response_text = response.read().decode("utf-8")
         except TimeoutError:
             return None, "timeout"
