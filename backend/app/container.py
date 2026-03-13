@@ -10,6 +10,7 @@ from app.infrastructure.db.netdisk_repository import SQLiteNetdiskRepository
 from app.infrastructure.db.news_repository import SQLiteNewsRepository
 from app.infrastructure.db.p2pstore_repository import SQLiteP2PStoreRepository
 from app.infrastructure.db.session import DatabaseSessionManager
+from app.infrastructure.db.social_repository import SQLiteSocialRepository
 from app.infrastructure.db.world_repository import SQLiteWorldRepository
 from app.infrastructure.llm.base import AbstractLLMClient
 from app.infrastructure.llm.siliconflow_client import SiliconFlowLLMClient
@@ -27,6 +28,7 @@ from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
 from app.services.p2pstore_service import P2PStoreService
 from app.services.search_service import SearchService
+from app.services.social_service import SocialService
 from app.services.story_arc_service import StoryArcService
 from app.services.world_service import WorldService
 from app.simulation.engine import SimulationEngine
@@ -44,6 +46,7 @@ from app.simulation.tools.mainpage_pipeline import MainPagePipelineToolExecutor
 from app.simulation.tools.netdisk_pipeline import NetdiskPipelineToolExecutor
 from app.simulation.tools.news_pipeline import NewsPipelineToolExecutor
 from app.simulation.tools.p2pstore_pipeline import P2PStorePipelineToolExecutor
+from app.simulation.tools.social_pipeline import SocialPipelineToolExecutor
 
 
 @dataclass(slots=True)
@@ -56,6 +59,7 @@ class ServiceContainer:
     netdisk_service: NetdiskService
     news_service: NewsService
     p2pstore_service: P2PStoreService
+    social_service: SocialService
     mainpage_service: MainPageService
     search_service: SearchService
     tool_registry: ToolRegistry
@@ -107,6 +111,10 @@ def build_container(settings: Settings) -> ServiceContainer:
     mainpage_repository.initialize()
     mainpage_service = MainPageService(mainpage_repository)
 
+    social_repository = SQLiteSocialRepository(database_session_manager)
+    social_repository.initialize()
+    social_service = SocialService(social_repository)
+
     search_service = SearchService(
         forum_service=forum_service,
         p2pstore_service=p2pstore_service,
@@ -141,6 +149,7 @@ def build_container(settings: Settings) -> ServiceContainer:
                 content_generator,
             ),
             MainPagePipelineToolExecutor(mainpage_service, consistency_checker, content_generator),
+            SocialPipelineToolExecutor(social_service, consistency_checker, content_generator),
         ]
     )
 
@@ -207,6 +216,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         netdisk_service=netdisk_service,
         news_service=news_service,
         p2pstore_service=p2pstore_service,
+        social_service=social_service,
         mainpage_service=mainpage_service,
         search_service=search_service,
         tool_registry=tool_registry,

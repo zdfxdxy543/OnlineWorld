@@ -291,6 +291,43 @@ class LifeEventStoryPlanner(AbstractStoryPlanner):
                 )
                 next_index += 1
 
+        social_post_step_id: str | None = None
+        if "social.create_post" in capability_names:
+            social_depends_on = [steps[-1].step_id] if steps else []
+            social_post_step_id = f"step-{next_index}"
+            steps.append(
+                StoryStep(
+                    step_id=social_post_step_id,
+                    capability="social.create_post",
+                    actor_id=primary_actor,
+                    payload={
+                        "content": event["content"],
+                        "tags": event["tags"],
+                    },
+                    depends_on=social_depends_on,
+                    rationale="同步生成更适合社交首页的生活动态。",
+                )
+            )
+            next_index += 1
+
+        if social_post_step_id and "social.reply_post" in capability_names:
+            reply_actors = [secondary_actor, tertiary_actor][:reply_count]
+            for reply_actor in reply_actors:
+                steps.append(
+                    StoryStep(
+                        step_id=f"step-{next_index}",
+                        capability="social.reply_post",
+                        actor_id=reply_actor,
+                        payload={
+                            "post_id": f"${social_post_step_id}.output.post_id",
+                            "content": "Add a short, friendly response that reflects the shared daily update.",
+                        },
+                        depends_on=[social_post_step_id],
+                        rationale="补足社交媒体式的轻量互动。",
+                    )
+                )
+                next_index += 1
+
         share_step_id: str | None = None
         if (
             {"netdisk.upload_file", "netdisk.create_share_link", "forum.create_thread"}.issubset(capability_names)
@@ -551,6 +588,47 @@ class OngoingLifeArcPlanner(AbstractStoryPlanner):
                     )
                 )
 
+        # Add lightweight social mirrors so arc schedulers can also use social site capabilities.
+        social_post_step_id: str | None = None
+        next_index = len(steps) + 1
+        if "social.create_post" in capability_names:
+            social_depends_on = [steps[-1].step_id] if steps else []
+            social_content_map = {
+                "discovery": "Something in daily life still feels unusual. Sharing the first clue and watching for more updates.",
+                "investigation": "Investigation is ongoing. We found partial evidence, but one key detail is still unresolved.",
+                "resolution": "Final verification is complete. Summary is now available and the ongoing issue is considered closed.",
+            }
+            social_post_step_id = f"step-{next_index}"
+            steps.append(
+                StoryStep(
+                    step_id=social_post_step_id,
+                    capability="social.create_post",
+                    actor_id=primary_actor,
+                    payload={
+                        "content": social_content_map.get(phase, "Daily update posted."),
+                        "tags": ["ongoing", "daily", phase],
+                    },
+                    depends_on=social_depends_on,
+                    rationale="为持续剧情同步一条社交动态，覆盖社交网页工具链。",
+                )
+            )
+            next_index += 1
+
+        if social_post_step_id and "social.reply_post" in capability_names:
+            steps.append(
+                StoryStep(
+                    step_id=f"step-{next_index}",
+                    capability="social.reply_post",
+                    actor_id=secondary_actor,
+                    payload={
+                        "post_id": f"${social_post_step_id}.output.post_id",
+                        "content": "Thanks for the update. I can confirm parts of this and will keep tracking the next clue.",
+                    },
+                    depends_on=[social_post_step_id],
+                    rationale="补充社交站点的轻量互动，确保回帖能力可被调度。",
+                )
+            )
+
         return StoryPlan(
             story_id=f"life-arc-{arc.arc_id}-phase-{phase}-run-{run_no:04d}",
             goal=goal,
@@ -786,6 +864,48 @@ class OngoingDetectiveArcPlanner(AbstractStoryPlanner):
                         rationale="不用新闻时用新帖结案。",
                     )
                 )
+
+        # Mirror detective arc progress to social site so probabilistic detective schedulers
+        # can use social page tools in both normal and serious-incident dispatches.
+        social_post_step_id: str | None = None
+        next_index = len(steps) + 1
+        if "social.create_post" in capability_names:
+            social_depends_on = [steps[-1].step_id] if steps else []
+            social_content_map = {
+                "discovery": "Case opened. We have clues, but no confirmed explanation yet.",
+                "investigation": "Case update: new evidence arrived, but one contradiction remains unresolved.",
+                "resolution": "Case closed. Final findings are now verified and published.",
+            }
+            social_post_step_id = f"step-{next_index}"
+            steps.append(
+                StoryStep(
+                    step_id=social_post_step_id,
+                    capability="social.create_post",
+                    actor_id=investigator,
+                    payload={
+                        "content": social_content_map.get(phase, "Case update posted."),
+                        "tags": ["detective", "case", phase],
+                    },
+                    depends_on=social_depends_on,
+                    rationale="同步侦探线到社交网站，覆盖 social 发帖工具。",
+                )
+            )
+            next_index += 1
+
+        if social_post_step_id and "social.reply_post" in capability_names:
+            steps.append(
+                StoryStep(
+                    step_id=f"step-{next_index}",
+                    capability="social.reply_post",
+                    actor_id=witness,
+                    payload={
+                        "post_id": f"${social_post_step_id}.output.post_id",
+                        "content": "Acknowledged. I can corroborate part of this update and will share more after the next check.",
+                    },
+                    depends_on=[social_post_step_id],
+                    rationale="同步侦探线的社交回帖能力，确保回帖工具可被调度。",
+                )
+            )
 
         return StoryPlan(
             story_id=f"detective-arc-{arc.arc_id}-phase-{phase}-run-{run_no:04d}",

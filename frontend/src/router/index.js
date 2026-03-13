@@ -7,6 +7,8 @@ import NewsApp from '../news/NewsApp.vue'
 import NewsHomeView from '../news/views/NewsHomeView.vue'
 import P2PStoreApp from '../p2pstore/P2PStoreApp.vue'
 import P2PStoreHomeView from '../p2pstore/views/P2PStoreHomeView.vue'
+import SocialApp from '../social/SocialApp.vue'
+import SocialHomeView from '../social/views/SocialHomeView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -81,6 +83,17 @@ const router = createRouter({
           path: 'product/:productId',
           name: 'p2pstore-product-detail',
           component: () => import('../p2pstore/views/P2PStoreProductView.vue'),
+        },
+      ],
+    },
+    {
+      path: '/social',
+      component: SocialApp,
+      children: [
+        {
+          path: '',
+          name: 'social-home',
+          component: SocialHomeView,
         },
       ],
     },
