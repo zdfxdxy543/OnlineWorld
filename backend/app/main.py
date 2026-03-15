@@ -34,18 +34,6 @@ def create_app() -> FastAPI:
             "search": "/search",
         }
 
-    @app.get("/search", response_class=HTMLResponse)
-    def read_search_page() -> HTMLResponse:
-        """Serve the 2000s-style search engine frontend"""
-        search_html_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "search.html"
-        if search_html_path.exists():
-            with open(search_html_path, 'r', encoding='utf-8') as f:
-                return HTMLResponse(content=f.read())
-        return HTMLResponse(
-            status_code=404,
-            content="<h1>404</h1><p>Search page not found.</p>"
-        )
-
     @app.get("/main/{slug}", response_class=HTMLResponse)
     def read_generated_main_page(slug: str) -> HTMLResponse:
         page = app.state.container.mainpage_service.get_page_by_slug(slug=slug)
