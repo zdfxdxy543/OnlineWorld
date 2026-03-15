@@ -9,6 +9,7 @@ import P2PStoreApp from '../p2pstore/P2PStoreApp.vue'
 import P2PStoreHomeView from '../p2pstore/views/P2PStoreHomeView.vue'
 import SocialApp from '../social/SocialApp.vue'
 import SocialHomeView from '../social/views/SocialHomeView.vue'
+import SearchView from '../views/SearchView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -69,6 +70,11 @@ const router = createRouter({
           component: () => import('../news/views/ArticleDetailView.vue'),
         },
       ],
+    },
+    {
+      path: '/search',
+      name: 'search',
+      component: SearchView,
     },
     {
       path: '/p2pstore',
