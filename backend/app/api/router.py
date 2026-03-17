@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1.endpoints.ai import router as ai_router
+from app.api.v1.endpoints.ai_image import router as ai_image_router
 from app.api.v1.endpoints.forum import router as forum_router
 from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.endpoints.mainpage import router as mainpage_router
@@ -24,3 +25,4 @@ api_router.include_router(p2pstore_router, prefix="/p2pstore", tags=["p2pstore"]
 api_router.include_router(social_router, prefix="/social", tags=["social"])
 api_router.include_router(mainpage_router, prefix="/main-pages", tags=["main-pages"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+api_router.include_router(ai_image_router, tags=["ai_image"])

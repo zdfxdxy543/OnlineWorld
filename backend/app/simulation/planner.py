@@ -86,6 +86,26 @@ class RuleBasedStoryPlanner(AbstractStoryPlanner):
                 )
             )
 
+        # 插入图片生成步骤（如有image.generate能力）
+        image_cap = None
+        if "image.generate" in capability_names:
+            image_cap = StoryStep(
+                step_id="step-img-1",
+                capability="image.generate",
+                actor_id=actor,
+                payload={
+                    "prompt": scenario["thread_title"] + " " + scenario["thread_content"][:40],
+                    "width": 512,
+                    "height": 512,
+                },
+                depends_on=["step-1"] if steps else [],
+                rationale="为帖子生成配图。",
+            )
+            steps.append(image_cap)
+            image_dep = [image_cap.step_id]
+        else:
+            image_dep = ["step-1"] if steps else []
+
         if {"netdisk.upload_file", "netdisk.create_share_link", "forum.create_thread"}.issubset(capability_names):
             steps.append(
                 StoryStep(
@@ -97,7 +117,7 @@ class RuleBasedStoryPlanner(AbstractStoryPlanner):
                         "purpose": scenario["purpose"],
                         "file_name": scenario["file_name"],
                     },
-                    depends_on=["step-1"] if steps else [],
+                    depends_on=image_dep,
                     rationale="先生成可追溯证据文件。",
                 )
             )
@@ -123,11 +143,12 @@ class RuleBasedStoryPlanner(AbstractStoryPlanner):
                         "title": scenario["thread_title"],
                         "content": scenario["thread_content"],
                         "tags": scenario["tags"],
+                        "image_url": "$step-img-1.output.image_url" if image_cap else None,
                         "netdisk_share_id": "$step-3.output.share_id",
                         "netdisk_access_code": "$step-3.output.access_code",
                     },
                     depends_on=["step-3"],
-                    rationale="在帖子中引用真实可访问的网盘证据。",
+                    rationale="在帖子中引用真实可访问的网盘证据和图片。",
                 )
             )
         elif "forum.create_thread" in capability_names:
@@ -141,9 +162,10 @@ class RuleBasedStoryPlanner(AbstractStoryPlanner):
                         "title": scenario["thread_title"],
                         "content": scenario["thread_content"],
                         "tags": scenario["tags"],
+                        "image_url": "$step-img-1.output.image_url" if image_cap else None,
                     },
-                    depends_on=["step-1"] if steps else [],
-                    rationale="建立可追踪的初始事件节点。",
+                    depends_on=image_dep,
+                    rationale="建立可追踪的初始事件节点并插入图片。",
                 )
             )
 
@@ -256,6 +278,25 @@ class LifeEventStoryPlanner(AbstractStoryPlanner):
                 planner_detail="No forum.create_thread capability available for life-event planner.",
             )
 
+        # 插入图片生成步骤（如有image.generate能力）
+        image_cap = None
+        if "image.generate" in capability_names:
+            image_cap = StoryStep(
+                step_id="step-img-1",
+                capability="image.generate",
+                actor_id=primary_actor,
+                payload={
+                    "prompt": event["title"] + " " + event["content"][:40],
+                    "width": 512,
+                    "height": 512,
+                },
+                rationale="为生活主题帖生成配图。",
+            )
+            steps.append(image_cap)
+            image_dep = [image_cap.step_id]
+        else:
+            image_dep = []
+
         steps.append(
             StoryStep(
                 step_id="step-1",
@@ -266,8 +307,10 @@ class LifeEventStoryPlanner(AbstractStoryPlanner):
                     "title": event["title"],
                     "content": event["content"],
                     "tags": event["tags"],
+                    "image_url": "$step-img-1.output.image_url" if image_cap else None,
                 },
-                rationale="发布一个生活化主题帖，作为讨论起点。",
+                depends_on=image_dep,
+                rationale="发布一个生活化主题帖，作为讨论起点并插入图片。",
             )
         )
 
@@ -294,20 +337,21 @@ class LifeEventStoryPlanner(AbstractStoryPlanner):
         social_post_step_id: str | None = None
         if "social.create_post" in capability_names:
             social_depends_on = [steps[-1].step_id] if steps else []
-            social_post_step_id = f"step-{next_index}"
             steps.append(
                 StoryStep(
-                    step_id=social_post_step_id,
+                    step_id=f"step-{next_index}",
                     capability="social.create_post",
                     actor_id=primary_actor,
                     payload={
                         "content": event["content"],
                         "tags": event["tags"],
+                        "image_url": "$step-img-1.output.image_url" if image_cap else None,
                     },
                     depends_on=social_depends_on,
-                    rationale="同步生成更适合社交首页的生活动态。",
+                    rationale="同步生成更适合社交首页的生活动态并插入图片。",
                 )
             )
+            social_post_step_id = f"step-{next_index}"
             next_index += 1
 
         if social_post_step_id and "social.reply_post" in capability_names:

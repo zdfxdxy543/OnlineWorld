@@ -132,6 +132,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         retry_backoff_seconds=settings.siliconflow_content_retry_backoff_seconds,
     )
 
+    from app.simulation.tools.image_pipeline import ImagePipelineToolExecutor
     tool_registry = ToolRegistry(
         executors=[
             NetdiskPipelineToolExecutor(netdisk_service, content_generator),
@@ -150,6 +151,7 @@ def build_container(settings: Settings) -> ServiceContainer:
             ),
             MainPagePipelineToolExecutor(mainpage_service, consistency_checker, content_generator),
             SocialPipelineToolExecutor(social_service, consistency_checker, content_generator),
+            ImagePipelineToolExecutor(content_generator),
         ]
     )
 
