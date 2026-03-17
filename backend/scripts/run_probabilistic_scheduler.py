@@ -5,6 +5,7 @@ import json
 import os
 import random
 import sys
+import traceback
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -266,8 +267,64 @@ def _run_scheduler(client: TestClient, *, endpoint: str, goal: str, actors: list
     return response.json()
 
 
+def _contains_llm_failure_marker(text: str) -> bool:
+    value = text.lower()
+    markers = (
+        "llm",
+        "siliconflow",
+        "planner",
+        "content_generation_failed",
+        "llm_planner_failed",
+        "timeout",
+    )
+    return any(marker in value for marker in markers)
+
+
+def _extract_failure_reason(report: dict) -> tuple[str, bool]:
+    results = report.get("results", [])
+    if not isinstance(results, list):
+        return "Unknown scheduler failure", False
+
+    for item in reversed(results):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status", "")).lower() != "failed":
+            continue
+
+        capability = str(item.get("capability", "unknown"))
+        error_code = str(item.get("error_code", "unknown"))
+        error_message = str(item.get("error_message", "")).strip() or "No error message"
+        reason = f"capability={capability}, error_code={error_code}, error_message={error_message}"
+        is_llm_related = _contains_llm_failure_marker(
+            f"{capability} {error_code} {error_message}"
+        )
+        return reason, is_llm_related
+
+    return "Scheduler status is failed but no failed action result found", False
+
+
+def _show_error_popup(title: str, message: str) -> None:
+    try:
+        import tkinter
+        from tkinter import messagebox
+
+        root = tkinter.Tk()
+        root.withdraw()
+        messagebox.showerror(title, message)
+        root.destroy()
+    except Exception:
+        pass
+
+
+def _notify_failure(*, title: str, reason: str, show_popup: bool) -> None:
+    print(f"{title}: {reason}")
+    if show_popup:
+        _show_error_popup(title, reason)
+
+
 def main() -> None:
     args = parse_args()
+    popup_on_llm_failure = os.getenv("SCHEDULER_POPUP_ON_LLM_FAILURE", "true").lower() == "true"
 
     if args.spawn_probability is not None:
         clamped = max(0.0, min(1.0, args.spawn_probability))
@@ -338,7 +395,27 @@ def main() -> None:
         try:
             report = _run_scheduler(client, endpoint=endpoint, goal=goal, actors=actors)
         except Exception as exc:
+            traceback.print_exc()
+            reason = str(exc).strip() or repr(exc)
+            if _contains_llm_failure_marker(reason):
+                _notify_failure(
+                    title="LLM Scheduler Failure",
+                    reason=reason,
+                    show_popup=popup_on_llm_failure,
+                )
             print(f"cycle_result=failed error={exc}")
+            failed_cycles += 1
+            continue
+
+        if str(report.get("status", "")).lower() == "failed":
+            reason, is_llm_related = _extract_failure_reason(report)
+            if is_llm_related:
+                _notify_failure(
+                    title="LLM Scheduler Failure",
+                    reason=reason,
+                    show_popup=popup_on_llm_failure,
+                )
+            print(f"cycle_result=failed reason={reason}")
             failed_cycles += 1
             continue
 

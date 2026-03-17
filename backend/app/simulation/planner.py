@@ -20,6 +20,41 @@ class AbstractStoryPlanner(ABC):
         raise NotImplementedError
 
 
+def _should_enable_image_generation(*, goal: str, default: bool) -> bool:
+    normalized = re.sub(r"\s+", " ", goal.strip().lower())
+    if not normalized:
+        return default
+
+    disabled_keywords = (
+        "no image",
+        "without image",
+        "text only",
+        "plain text",
+        "不需要图片",
+        "不要图片",
+        "无需图片",
+        "纯文字",
+    )
+    if any(keyword in normalized for keyword in disabled_keywords):
+        return False
+
+    enabled_keywords = (
+        "image",
+        "picture",
+        "photo",
+        "illustration",
+        "poster",
+        "封面",
+        "插图",
+        "图片",
+        "配图",
+    )
+    if any(keyword in normalized for keyword in enabled_keywords):
+        return True
+
+    return default
+
+
 class RuleBasedStoryPlanner(AbstractStoryPlanner):
     _SUSPICIOUS_SCENARIOS = [
         {
@@ -86,9 +121,11 @@ class RuleBasedStoryPlanner(AbstractStoryPlanner):
                 )
             )
 
-        # 插入图片生成步骤（如有image.generate能力）
+        should_generate_image = _should_enable_image_generation(goal=goal, default=True)
+
+        # 插入图片生成步骤（按目标与能力决定）
         image_cap = None
-        if "image.generate" in capability_names:
+        if should_generate_image and "image.generate" in capability_names:
             image_cap = StoryStep(
                 step_id="step-img-1",
                 capability="image.generate",
@@ -278,9 +315,11 @@ class LifeEventStoryPlanner(AbstractStoryPlanner):
                 planner_detail="No forum.create_thread capability available for life-event planner.",
             )
 
-        # 插入图片生成步骤（如有image.generate能力）
+        should_generate_image = _should_enable_image_generation(goal=goal, default=True)
+
+        # 插入图片生成步骤（按目标与能力决定）
         image_cap = None
-        if "image.generate" in capability_names:
+        if should_generate_image and "image.generate" in capability_names:
             image_cap = StoryStep(
                 step_id="step-img-1",
                 capability="image.generate",

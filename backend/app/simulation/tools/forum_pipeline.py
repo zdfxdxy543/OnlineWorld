@@ -199,6 +199,7 @@ class ForumCreateThreadWorkflow(ForumWorkflowBase):
                 "title": "string",
                 "content": "string",
                 "tags": "string[] optional",
+                "image_url": "string optional",
                 "netdisk_share_id": "string optional",
                 "netdisk_access_code": "string optional",
                 "allowed_board_slugs": self._available_board_slugs(),
@@ -210,6 +211,7 @@ class ForumCreateThreadWorkflow(ForumWorkflowBase):
         board_slug = self._resolve_board_slug(str(request.payload.get("board_slug", "")).strip())
         requested_title = str(request.payload.get("title", "")).strip()
         requested_content = str(request.payload.get("content", "")).strip()
+        image_url = str(request.payload.get("image_url", "")).strip()
         netdisk_share_id = str(request.payload.get("netdisk_share_id", "")).strip()
         netdisk_access_code = str(request.payload.get("netdisk_access_code", "")).strip()
         tags = request.payload.get("tags", [])
@@ -272,6 +274,7 @@ class ForumCreateThreadWorkflow(ForumWorkflowBase):
                 "board_name": draft.board_name,
                 "requested_title": draft.requested_title,
                 "requested_content": draft.requested_content,
+                "image_url": image_url,
                 "tags": draft.tags,
                 "netdisk_share_id": netdisk_share.share_id if netdisk_share else "",
                 "netdisk_access_code": netdisk_share.access_code if netdisk_share else "",
@@ -308,6 +311,9 @@ class ForumCreateThreadWorkflow(ForumWorkflowBase):
     ) -> ConsistencyCheckResult:
         title = sanitize_forum_title(str(generated_content.fields.get("title", "")))
         content = sanitize_forum_content(str(generated_content.fields.get("content", "")))
+        image_url = str(fact_result.generation_context.get("image_url", "")).strip()
+        if image_url and image_url not in content:
+            content = f"{content}\n\n![Generated scene]({image_url})"
         normalized_fields = {"title": title, "content": content}
         violations = []
         violations.extend(self.consistency_checker.validate_required_fields(normalized_fields, ["title", "content"]))

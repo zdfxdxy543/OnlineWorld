@@ -148,6 +148,8 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
             "Do not invent board slugs, thread ids, site ids, or capability names. "
             "When a later step needs an object from an earlier step, reference it explicitly using '$step_id.output.field' syntax. "
             "Example: use '$step_1.output.threads[0].id' or '$step_2.output.thread_id' instead of invented placeholders. "
+            "Decide whether to include image generation based on goal intent. "
+            "If image generation is included, add exactly one 'image.generate' step and pass '$<image_step>.output.image_url' to publishable steps. "
             "For publishable text fields such as title/content, always use English text. "
             "For any publishable text such as title/content, write the final in-world forum text directly. "
             "If the goal implies website/page generation and main.generate_page is available, include a main.generate_page step. "
@@ -274,6 +276,11 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
     ) -> list[StoryStep]:
         if not actors:
             actors = ["aria"]
+
+        should_generate_image = self._should_enable_image_generation(
+            goal=goal,
+            default=("forum.create_thread" in capabilities or "social.create_post" in capabilities),
+        )
 
         chain_steps = list(steps)
         actor_cycle = list(actors)
@@ -471,7 +478,122 @@ class SiliconFlowStoryPlanner(AbstractStoryPlanner):
                 rationale="Outcome phase: publish a separate summary thread by another actor.",
             )
 
+        chain_steps = self._apply_image_policy(
+            steps=chain_steps,
+            capabilities=capabilities,
+            should_generate_image=should_generate_image,
+            actor_id=actor_for(0),
+        )
+
         return chain_steps
+
+    def _apply_image_policy(
+        self,
+        *,
+        steps: list[StoryStep],
+        capabilities: set[str],
+        should_generate_image: bool,
+        actor_id: str,
+    ) -> list[StoryStep]:
+        if "image.generate" not in capabilities:
+            for step in steps:
+                step.payload.pop("image_url", None)
+            return self._cleanup_missing_dependencies(steps)
+
+        if not should_generate_image:
+            filtered = [step for step in steps if step.capability != "image.generate"]
+            for step in filtered:
+                step.payload.pop("image_url", None)
+            return self._cleanup_missing_dependencies(filtered)
+
+        image_step = next((step for step in steps if step.capability == "image.generate"), None)
+        if image_step is None:
+            image_step = StoryStep(
+                step_id=self._next_auto_step_id(steps),
+                capability="image.generate",
+                actor_id=actor_id,
+                payload={
+                    "prompt": "Evidence-style image for the current story thread",
+                    "width": 512,
+                    "height": 512,
+                },
+                depends_on=[],
+                rationale="Generate one visual asset for the publishing phase.",
+            )
+            insertion_index = self._find_first_publish_index(steps)
+            if insertion_index < 0:
+                steps.append(image_step)
+            else:
+                steps.insert(insertion_index, image_step)
+
+        image_ref = f"${image_step.step_id}.output.image_url"
+        for step in steps:
+            if step.capability in {"forum.create_thread", "social.create_post"}:
+                if not str(step.payload.get("image_url", "")).strip():
+                    step.payload["image_url"] = image_ref
+                if image_step.step_id not in step.depends_on:
+                    step.depends_on.append(image_step.step_id)
+
+        return self._cleanup_missing_dependencies(steps)
+
+    @staticmethod
+    def _find_first_publish_index(steps: list[StoryStep]) -> int:
+        for index, step in enumerate(steps):
+            if step.capability in {"forum.create_thread", "social.create_post", "news.publish_article"}:
+                return index
+        return -1
+
+    @staticmethod
+    def _next_auto_step_id(steps: list[StoryStep]) -> str:
+        existing = {step.step_id for step in steps}
+        index = 1
+        while True:
+            candidate = f"step-auto-image-{index}"
+            if candidate not in existing:
+                return candidate
+            index += 1
+
+    @staticmethod
+    def _cleanup_missing_dependencies(steps: list[StoryStep]) -> list[StoryStep]:
+        step_ids = {step.step_id for step in steps}
+        for step in steps:
+            step.depends_on = [dependency for dependency in step.depends_on if dependency in step_ids]
+        return steps
+
+    @staticmethod
+    def _should_enable_image_generation(*, goal: str, default: bool) -> bool:
+        normalized = re.sub(r"\s+", " ", goal.strip().lower())
+        if not normalized:
+            return default
+
+        disabled_keywords = (
+            "no image",
+            "without image",
+            "text only",
+            "plain text",
+            "不需要图片",
+            "不要图片",
+            "无需图片",
+            "纯文字",
+        )
+        if any(keyword in normalized for keyword in disabled_keywords):
+            return False
+
+        enabled_keywords = (
+            "image",
+            "picture",
+            "photo",
+            "illustration",
+            "poster",
+            "封面",
+            "插图",
+            "图片",
+            "配图",
+        )
+        if any(keyword in normalized for keyword in enabled_keywords):
+            return True
+
+        return default
 
     @staticmethod
     def _goal_implies_webpage(goal: str) -> bool:
