@@ -8,6 +8,7 @@ from app.infrastructure.db.forum_repository import SQLiteForumRepository
 from app.infrastructure.db.mainpage_repository import SQLiteMainPageRepository
 from app.infrastructure.db.netdisk_repository import SQLiteNetdiskRepository
 from app.infrastructure.db.news_repository import SQLiteNewsRepository
+from app.infrastructure.db.paper_repository import SQLitePaperRepository
 from app.infrastructure.db.p2pstore_repository import SQLiteP2PStoreRepository
 from app.infrastructure.db.session import DatabaseSessionManager
 from app.infrastructure.db.social_repository import SQLiteSocialRepository
@@ -21,11 +22,13 @@ from app.infrastructure.llm.structured_content import (
 from app.infrastructure.llm.siliconflow_planner import SiliconFlowStoryPlanner
 from app.repositories.forum_repository import AbstractForumRepository
 from app.repositories.news_repository import AbstractNewsRepository
+from app.repositories.paper_repository import AbstractPaperRepository
 from app.services.forum_service import ForumService
 from app.services.generation_service import GenerationService
 from app.services.mainpage_service import MainPageService
 from app.services.netdisk_service import NetdiskService
 from app.services.news_service import NewsService
+from app.services.paper_service import PaperService
 from app.services.p2pstore_service import P2PStoreService
 from app.services.search_service import SearchService
 from app.services.social_service import SocialService
@@ -58,6 +61,7 @@ class ServiceContainer:
     forum_service: ForumService
     netdisk_service: NetdiskService
     news_service: NewsService
+    paper_service: PaperService
     p2pstore_service: P2PStoreService
     social_service: SocialService
     mainpage_service: MainPageService
@@ -104,6 +108,10 @@ def build_container(settings: Settings) -> ServiceContainer:
     news_repository.initialize()
     news_service = NewsService(news_repository)
 
+    paper_repository: AbstractPaperRepository = SQLitePaperRepository(database_session_manager)
+    paper_repository.initialize()
+    paper_service = PaperService(paper_repository)
+
     p2pstore_repository = SQLiteP2PStoreRepository(database_session_manager)
     p2pstore_repository.initialize()
     p2pstore_service = P2PStoreService(p2pstore_repository)
@@ -119,6 +127,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         forum_service=forum_service,
         p2pstore_service=p2pstore_service,
         news_service=news_service,
+        paper_service=paper_service,
         mainpage_service=mainpage_service,
         netdisk_service=netdisk_service,
     )
@@ -133,6 +142,7 @@ def build_container(settings: Settings) -> ServiceContainer:
     )
 
     from app.simulation.tools.image_pipeline import ImagePipelineToolExecutor
+    from app.simulation.tools.paper_pipeline import PaperPipelineToolExecutor
     tool_registry = ToolRegistry(
         executors=[
             NetdiskPipelineToolExecutor(netdisk_service, content_generator),
@@ -152,6 +162,13 @@ def build_container(settings: Settings) -> ServiceContainer:
             MainPagePipelineToolExecutor(mainpage_service, consistency_checker, content_generator),
             SocialPipelineToolExecutor(social_service, consistency_checker, content_generator),
             ImagePipelineToolExecutor(content_generator),
+            PaperPipelineToolExecutor(
+                paper_service,
+                consistency_checker,
+                content_generator,
+                forum_service,
+                netdisk_service,
+            ),
         ]
     )
 
@@ -217,6 +234,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         forum_service=forum_service,
         netdisk_service=netdisk_service,
         news_service=news_service,
+        paper_service=paper_service,
         p2pstore_service=p2pstore_service,
         social_service=social_service,
         mainpage_service=mainpage_service,

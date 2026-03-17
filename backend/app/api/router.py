@@ -13,6 +13,7 @@ from app.api.v1.endpoints.p2pstore import router as p2pstore_router
 from app.api.v1.endpoints.search import router as search_router
 from app.api.v1.endpoints.social import router as social_router
 from app.api.v1.endpoints.world import router as world_router
+from app.api.v1.endpoints.academic import router as academic_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -26,3 +27,4 @@ api_router.include_router(social_router, prefix="/social", tags=["social"])
 api_router.include_router(mainpage_router, prefix="/main-pages", tags=["main-pages"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
 api_router.include_router(ai_image_router, tags=["ai_image"])
+api_router.include_router(academic_router, prefix="/academic", tags=["academic"])

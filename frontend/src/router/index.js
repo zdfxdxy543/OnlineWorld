@@ -10,6 +10,8 @@ import P2PStoreHomeView from '../p2pstore/views/P2PStoreHomeView.vue'
 import SocialApp from '../social/SocialApp.vue'
 import SocialHomeView from '../social/views/SocialHomeView.vue'
 import SearchView from '../views/SearchView.vue'
+import AcademicApp from '../academic/AcademicApp.vue'
+import AcademicHomeView from '../academic/views/AcademicHomeView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -100,6 +102,27 @@ const router = createRouter({
           path: '',
           name: 'social-home',
           component: SocialHomeView,
+        },
+      ],
+    },
+    {
+      path: '/academic',
+      component: AcademicApp,
+      children: [
+        {
+          path: '',
+          name: 'academic-home',
+          component: AcademicHomeView,
+        },
+        {
+          path: 'search',
+          name: 'academic-search',
+          component: () => import('../academic/views/AcademicSearchView.vue'),
+        },
+        {
+          path: 'paper/:paperId',
+          name: 'academic-paper-detail',
+          component: () => import('../academic/views/AcademicPaperDetailView.vue'),
         },
       ],
     },

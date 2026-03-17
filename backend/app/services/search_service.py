@@ -12,7 +12,7 @@ class SearchResult:
     result_id: str
     title: str
     description: str
-    content_type: str  # "forum_thread", "forum_post", "product", "order", "news", "page"
+    content_type: str  # "forum_thread", "forum_post", "product", "order", "news", "page", "academic_paper"
     url: str
     created_at: str
     relevance_score: float = 1.0
@@ -27,12 +27,14 @@ class SearchService:
         forum_service: Any,
         p2pstore_service: Any,
         news_service: Any,
+        paper_service: Any,
         mainpage_service: Any,
         netdisk_service: Any,
     ) -> None:
         self.forum_service = forum_service
         self.p2pstore_service = p2pstore_service
         self.news_service = news_service
+        self.paper_service = paper_service
         self.mainpage_service = mainpage_service
         self.netdisk_service = netdisk_service
 
@@ -61,6 +63,9 @@ class SearchService:
 
         # Search netdisk
         results.extend(self._search_netdisk(query_lower))
+
+        # Search papers
+        results.extend(self._search_papers(query_lower))
 
         # Sort by relevance score (descending) and then by creation time (descending)
         results.sort(key=lambda r: (r.relevance_score, r.created_at), reverse=True)
@@ -137,6 +142,46 @@ class SearchService:
                 except Exception:
                     pass
 
+        except Exception:
+            pass
+
+        return results
+
+    def _search_papers(self, query: str) -> list[SearchResult]:
+        """Search academic papers"""
+        results = []
+
+        try:
+            papers = getattr(self.paper_service, "list_papers", lambda limit=100: [])()(limit=100)
+            for paper in papers:
+                title = getattr(paper, 'title', str(paper))
+                authors = getattr(paper, 'authors', [])
+                institution = getattr(paper, 'institution', '')
+                keywords = getattr(paper, 'keywords', [])
+                journal = getattr(paper, 'journal', '')
+                paper_id = getattr(paper, 'paper_id', '')
+
+                authors_str = ", ".join(authors) if isinstance(authors, list) else str(authors)
+                keywords_str = ", ".join(keywords) if isinstance(keywords, list) else str(keywords)
+                description = f"{authors_str} - {institution} - {journal}"
+                content = f"{title} {authors_str} {keywords_str} {institution}"
+
+                title_relevance = self._calculate_relevance(query, title)
+                content_relevance = self._calculate_relevance(query, content)
+                max_relevance = max(title_relevance, content_relevance)
+
+                if max_relevance > 0:
+                    results.append(
+                        SearchResult(
+                            result_id=f"paper-{paper_id}",
+                            title=title,
+                            description=description[:200] if description else "No description",
+                            content_type="academic_paper",
+                            url="/academic/paper/" + paper_id if paper_id else "/academic",
+                            created_at=getattr(paper, 'publish_date', datetime.now().isoformat()),
+                            relevance_score=max_relevance,
+                        )
+                    )
         except Exception:
             pass
 
